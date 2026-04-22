@@ -36,8 +36,10 @@ impl Db {
 
         let pool = AnyPoolOptions::new()
             .max_connections(5)
-            .connect(database_url)
-            .await?;
+            .min_connections(1)
+            .acquire_timeout(std::time::Duration::from_secs(10))
+            .idle_timeout(std::time::Duration::from_secs(600))
+            .connect_lazy(database_url)?;
 
         let db = Self { pool };
         db.init().await?;

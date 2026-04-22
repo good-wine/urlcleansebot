@@ -30,15 +30,14 @@ log = "0.4"
 once_cell = "1.19"
 
 [profile.release]
-# Optimize for performance
-lto = true
-strip = true
+lto = "fat"
+strip = "symbols"
 codegen-units = 1
 incremental = false
 panic = "abort"
-opt-level = 3
+opt-level = "z"
 overflow-checks = false
-split-debuginfo = "unpacked"
+debug = false
 
 [profile.release-with-debug]
 inherits = "release"
