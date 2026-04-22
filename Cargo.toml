@@ -2,15 +2,14 @@
 name = "clear_urls_bot"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.88"
 default-run = "clear_urls_bot"
 
 [dependencies]
 # Tokio with only needed features (instead of "full")
 tokio = { version = "1.41", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "fs"] }
-teloxide = { version = "0.17", features = ["macros", "webhooks"] }
-tower-http = { version = "0.6", features = ["fs", "trace", "cors", "set-header"] }
-sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite", "postgres", "macros", "uuid"] }
+teloxide = { version = "0.17", default-features = false, features = ["macros", "webhooks", "ctrlc_handler", "rustls"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "postgres", "macros", "uuid", "any"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = { version = "0.12.2", features = ["json", "rustls-tls"], default-features = false }
@@ -22,19 +21,11 @@ tracing-appender = "0.2"
 tracing-error = "0.2"
 dotenvy = "0.15"
 anyhow = "1.0"
-hmac = "0.12"
-sha2 = "0.10"
-hex = "0.4"
-tower = { version = "0.5", features = ["util"] }
 futures = "0.3"
-time = "0.3"
-async-stream = "0.3"
 async-trait = "0.1"
 whatlang = "0.18.0"
 moka = { version = "0.12.12", features = ["future"] }
 base64 = "0.22"
-
-serde_urlencoded = "0.7.1"
 log = "0.4"
 once_cell = "1.19"
 
