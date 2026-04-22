@@ -97,6 +97,64 @@ AI_MODEL=gpt-4
 VIRUSTOTAL_API_KEY=your_virustotal_api_key_here
 ```
 
+#### Webhook Mode (Optional)
+
+By default the bot uses **long-polling** (one outbound persistent connection to
+`api.telegram.org`). To switch to **webhooks** — required if you want zero idle
+load, scale-to-zero on serverless platforms, or place the bot behind an HTTPS
+load balancer — set the following variables:
+
+```bash
+# Public HTTPS URL Telegram will POST updates to.
+# Must be a valid HTTPS endpoint reachable from the public internet.
+WEBHOOK_URL=https://clear-urls-bot.example.com/webhook
+
+# Random secret used to verify the X-Telegram-Bot-Api-Secret-Token header.
+# Generate with one of:
+#   openssl rand -hex 32
+#   python3 -c "import secrets; print(secrets.token_hex(32))"
+# Constraints: 16-256 chars, only A-Z a-z 0-9 _ -
+WEBHOOK_SECRET=7f3a9c2e5b4d8f1e6a0c3b9d2e5f8a1c4b7d0e3f6a9c2e5b8d1f4a7c0e3b6d9f
+
+# Port the embedded HTTP server binds to (default 8080).
+PORT=8080
+```
+
+**How it works:**
+
+- On startup, the bot calls `setWebhook` on the Telegram API automatically and
+  starts an HTTP listener on `0.0.0.0:$PORT`.
+- Every incoming POST is verified against `WEBHOOK_SECRET`; mismatched requests
+  are rejected with `401`.
+- When `WEBHOOK_URL` is **unset**, the bot falls back to long-polling (no HTTP
+  server is started, no port is opened).
+
+**Manual webhook registration** (only needed for debugging):
+
+```bash
+curl -X POST "https://api.telegram.org/bot$TELOXIDE_TOKEN/setWebhook" \
+  -d "url=$WEBHOOK_URL" \
+  -d "secret_token=$WEBHOOK_SECRET" \
+  -d "max_connections=40" \
+  -d "allowed_updates=[\"message\",\"edited_message\",\"callback_query\",\"inline_query\",\"chosen_inline_result\"]"
+
+# Inspect current webhook
+curl "https://api.telegram.org/bot$TELOXIDE_TOKEN/getWebhookInfo"
+
+# Remove webhook (revert to long-polling)
+curl -X POST "https://api.telegram.org/bot$TELOXIDE_TOKEN/deleteWebhook"
+```
+
+**When to choose which:**
+
+| Scenario | Mode |
+|---|---|
+| Local development | Long-polling |
+| Single small VPS / Replit / Container | Long-polling (simpler) |
+| Leapcell Container with public domain | Either |
+| Leapcell Functions / scale-to-zero | **Webhook** (required) |
+| High-throughput bot behind LB | **Webhook** |
+
 #### Database Options
 
 **SQLite (Default):**

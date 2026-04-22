@@ -23,6 +23,14 @@ pub struct Config {
     pub ai_api_base: String,
     pub ai_model: String,
     pub inline_max_results: usize,
+    /// Public HTTPS URL where Telegram will POST updates.
+    /// If unset, the bot runs in long-polling mode.
+    pub webhook_url: Option<String>,
+    /// Random secret used to verify the `X-Telegram-Bot-Api-Secret-Token`
+    /// header on incoming webhook requests. Required when `webhook_url` is set.
+    pub webhook_secret: Option<String>,
+    /// TCP port the embedded HTTP server binds to in webhook mode.
+    pub port: u16,
 }
 
 impl Config {
@@ -85,6 +93,13 @@ impl Config {
             .unwrap_or(DEFAULT_INLINE_MAX_RESULTS)
             .min(50);
 
+        let webhook_url = env::var("WEBHOOK_URL").ok().filter(|s| !s.is_empty());
+        let webhook_secret = env::var("WEBHOOK_SECRET").ok().filter(|s| !s.is_empty());
+        let port: u16 = env::var("PORT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(8080);
+
         Ok(Self {
             bot_token,
             bot_username,
@@ -96,6 +111,9 @@ impl Config {
             ai_api_base,
             ai_model,
             inline_max_results,
+            webhook_url,
+            webhook_secret,
+            port,
         })
     }
 
@@ -124,6 +142,35 @@ impl Config {
                 );
             }
         }
+
+        // Webhook validation
+        if let Some(url) = &self.webhook_url {
+            if !url.starts_with("https://") {
+                anyhow::bail!("FATAL: WEBHOOK_URL deve usare HTTPS (Telegram lo richiede).");
+            }
+            let secret = self.webhook_secret.as_deref().unwrap_or("");
+            if secret.is_empty() {
+                anyhow::bail!(
+                    "FATAL: WEBHOOK_SECRET e' obbligatorio quando WEBHOOK_URL e' impostato. \
+                     Generalo con: openssl rand -hex 32"
+                );
+            }
+            if secret.len() < 16 || secret.len() > 256 {
+                anyhow::bail!(
+                    "FATAL: WEBHOOK_SECRET deve essere lungo 16-256 caratteri (attuale: {}).",
+                    secret.len()
+                );
+            }
+            if !secret
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            {
+                anyhow::bail!(
+                    "FATAL: WEBHOOK_SECRET puo' contenere solo A-Z a-z 0-9 _ - (regola di Telegram)."
+                );
+            }
+        }
+
         Ok(())
     }
 }

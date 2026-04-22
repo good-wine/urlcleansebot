@@ -145,7 +145,7 @@ podman run -d --name clear_urls_bot --pod clear_urls_bot_pod -p 3000:3000 --env-
 - Backup automatico DB: script backup_db.sh, cron consigliato
 - Caching risultati pulizia: cache interna per URL ripetuti
 - Ottimizzazione DB/async: query asincrone, pooling, batch
-- Webhook HTTPS: pronto per refactor, supporto via env
+- Webhook HTTPS: supportato nativamente, attivabile con `WEBHOOK_URL` + `WEBHOOK_SECRET`
 
 ## 🛡️ Sicurezza e Best Practice
 
@@ -159,7 +159,7 @@ podman run -d --name clear_urls_bot --pod clear_urls_bot_pod -p 3000:3000 --env-
 - Notifiche automatiche errori: messaggio all’admin in caso di panic/errori
 - Caching risultati pulizia: cache interna per URL ripetuti
 - Ottimizzazione DB/async: query asincrone, pooling, batch
-- Webhook HTTPS: pronto per refactor, supporto via env
+- Webhook HTTPS: supportato nativamente, attivabile con `WEBHOOK_URL` + `WEBHOOK_SECRET`
 - Integrazione VirusTotal: controllo link sospetti, avviso all’utente
 
 ## 🔒 Sicurezza

@@ -33,12 +33,54 @@ pub async fn run_bot(
         .branch(Update::filter_chosen_inline_result().endpoint(handle_chosen_inline_result))
         .branch(Update::filter_callback_query().endpoint(handle_callback));
 
-    Dispatcher::builder(bot, handler)
+    let webhook_url = config.webhook_url.clone();
+    let webhook_secret = config.webhook_secret.clone();
+    let port = config.port;
+
+    let mut dispatcher = Dispatcher::builder(bot.clone(), handler)
         .dependencies(dptree::deps![db, rules, ai, config, event_tx])
         .enable_ctrlc_handler()
-        .build()
-        .dispatch()
-        .await;
+        .build();
+
+    match webhook_url {
+        Some(url) => {
+            use teloxide::update_listeners::webhooks;
+            let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
+            let parsed = match url::Url::parse(&url) {
+                Ok(u) => u,
+                Err(e) => {
+                    tracing::error!("WEBHOOK_URL non valido ({url}): {e}");
+                    return;
+                }
+            };
+            let mut opts = webhooks::Options::new(addr, parsed);
+            if let Some(secret) = webhook_secret {
+                opts = opts.secret_token(secret);
+            }
+            tracing::info!(
+                "Avvio in modalita' WEBHOOK: bind={addr}, public_url={url}"
+            );
+            match webhooks::axum(bot, opts).await {
+                Ok(listener) => {
+                    dispatcher
+                        .dispatch_with_listener(
+                            listener,
+                            teloxide::error_handlers::LoggingErrorHandler::with_custom_text(
+                                "Errore webhook listener",
+                            ),
+                        )
+                        .await;
+                }
+                Err(e) => {
+                    tracing::error!("Impossibile avviare il webhook: {e}");
+                }
+            }
+        }
+        None => {
+            tracing::info!("Avvio in modalita' LONG-POLLING");
+            dispatcher.dispatch().await;
+        }
+    }
 }
 
 #[tracing::instrument(skip(bot, db, rules, ai, config), fields(user_id = %q.from.id.0))]

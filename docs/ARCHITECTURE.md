@@ -72,7 +72,7 @@ src/
 
 ### Processing Pipeline
 
-1. **Message Reception**: Telegram updates processed via long polling
+1. **Message Reception**: Telegram updates processed via long-polling by default, or via webhook (HTTPS POST + `X-Telegram-Bot-Api-Secret-Token`) when `WEBHOOK_URL` is configured
 2. **URL Detection**: Entity-based detection (Url, TextLink) + regex fallback
 3. **Context Analysis**: Language detection, user/chat configuration lookup
 4. **Security Check**: Optional VirusTotal scan for malware detection
@@ -220,7 +220,7 @@ podman run --pod clear_urls_bot_pod clear_urls_bot
 - Backup automatico DB: script backup_db.sh, cron consigliato
 - Caching risultati pulizia: cache interna per URL ripetuti
 - Ottimizzazione DB/async: query asincrone, pooling, batch
-- Webhook HTTPS: pronto per refactor, supporto via env
+- Webhook HTTPS: supportato nativamente (teloxide + axum), attivabile via `WEBHOOK_URL` / `WEBHOOK_SECRET` / `PORT`
 - Integrazione VirusTotal: controllo link sospetti, avviso all’utente
 
 ## 🔧 Development Architecture
