@@ -5,6 +5,7 @@ use sqlx::{any::AnyPoolOptions, Any, Pool};
 #[derive(Clone)]
 pub struct Db {
     pub pool: Pool<Any>,
+    database_url: String,
 }
 
 impl Db {
@@ -31,6 +32,7 @@ impl Db {
         .await?;
         Ok(())
     }
+
     pub async fn new(database_url: &str) -> Result<Self> {
         sqlx::any::install_default_drivers();
 
@@ -41,13 +43,20 @@ impl Db {
             .idle_timeout(std::time::Duration::from_secs(600))
             .connect_lazy(database_url)?;
 
-        let db = Self { pool };
+        let db = Self {
+            pool,
+            database_url: database_url.to_string(),
+        };
         db.init().await?;
         Ok(db)
     }
 
+    fn is_sqlite(&self) -> bool {
+        self.database_url.starts_with("sqlite")
+    }
+
     async fn init(&self) -> Result<()> {
-        let is_sqlite = self.pool.connect_options().database_url.scheme() == "sqlite";
+        let is_sqlite = self.is_sqlite();
 
         let create_user_configs = if is_sqlite {
             "CREATE TABLE IF NOT EXISTS user_configs (
@@ -241,6 +250,7 @@ impl Db {
             )"
         };
         sqlx::query(create_whitelist).execute(&self.pool).await?;
+
         // Feature flags table
         let create_feature_flags = if is_sqlite {
             "CREATE TABLE IF NOT EXISTS feature_flags (
@@ -404,16 +414,15 @@ impl Db {
     }
 
     pub async fn get_stats_by_day(&self, user_id: i64) -> Result<Vec<(String, i64)>> {
-        let is_sqlite = self.pool.connect_options().database_url.scheme() == "sqlite";
-        let query = if is_sqlite {
-            "SELECT date(timestamp, 'unixepoch') as day, COUNT(*) 
-             FROM cleaned_links 
-             WHERE user_id = ? 
+        let query = if self.is_sqlite() {
+            "SELECT date(timestamp, 'unixepoch') as day, COUNT(*) \
+             FROM cleaned_links \
+             WHERE user_id = ? \
              GROUP BY day ORDER BY day DESC LIMIT 7"
         } else {
-            "SELECT to_char(to_timestamp(timestamp), 'YYYY-MM-DD') as day, COUNT(*) 
-             FROM cleaned_links 
-             WHERE user_id = ? 
+            "SELECT to_char(to_timestamp(timestamp), 'YYYY-MM-DD') as day, COUNT(*) \
+             FROM cleaned_links \
+             WHERE user_id = ? \
              GROUP BY day ORDER BY day DESC LIMIT 7"
         };
 
@@ -543,14 +552,14 @@ impl Db {
 
     pub async fn get_domain_cleanup_stats(&self, user_id: i64) -> Result<Vec<(String, i64)>> {
         let rows = sqlx::query_as::<_, (String, i64)>(
-            "SELECT 
-                SUBSTR(original_url, INSTR(original_url, '://') + 3, 
-                       INSTR(SUBSTR(original_url, INSTR(original_url, '://') + 3), '/') - 1) as domain,
-                COUNT(*) as clean_count
-             FROM cleaned_links 
-             WHERE user_id = ? 
-             GROUP BY domain 
-             ORDER BY clean_count DESC 
+            "SELECT \
+                SUBSTR(original_url, INSTR(original_url, '://') + 3, \
+                       INSTR(SUBSTR(original_url, INSTR(original_url, '://') + 3), '/') - 1) as domain,\
+                COUNT(*) as clean_count\
+             FROM cleaned_links \
+             WHERE user_id = ? \
+             GROUP BY domain \
+             ORDER BY clean_count DESC \
              LIMIT 10"
         )
         .bind(user_id)
