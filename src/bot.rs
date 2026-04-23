@@ -6,6 +6,7 @@ use crate::{
     security::{sanitize_callback, sanitize_input, RATE_LIMITER},
 };
 use base64::prelude::*;
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use regex::Regex;
 use teloxide::prelude::*;
 use teloxide::types::{
@@ -1970,13 +1971,22 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
         return None;
     };
 
+    let uuid_re = Regex::new(
+        r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
+    .ok()?;
+    if !uuid_re.is_match(uuid_ref) {
+        return None;
+    }
+    let safe_uuid = utf8_percent_encode(uuid_ref, NON_ALPHANUMERIC).to_string();
+
     let mut malicious = false;
     let mut potentially_malicious = false;
     let mut score = 0.0_f64;
 
     for _ in 0..4 {
         tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-        let result_endpoint = format!("https://urlscan.io/api/v1/result/{}/", uuid_ref);
+        let result_endpoint = format!("https://urlscan.io/api/v1/result/{}/", safe_uuid);
         let result_resp = match client
             .get(&result_endpoint)
             .header("API-Key", &api_key)
