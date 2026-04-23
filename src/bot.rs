@@ -1,6 +1,7 @@
 use crate::{
     db::{models::UserConfig, Db},
     i18n,
+    redirects::{format_hit_html, RedirectService},
     sanitizer::{AiEngine, RuleEngine},
     security::{sanitize_callback, sanitize_input, RATE_LIMITER},
 };
@@ -37,8 +38,23 @@ pub async fn run_bot(
     let webhook_secret = config.webhook_secret.clone();
     let port = config.port;
 
+    let redirect_service = match RedirectService::new() {
+        Ok(svc) => svc,
+        Err(e) => {
+            tracing::error!("Impossibile inizializzare RedirectService: {e}");
+            return;
+        }
+    };
+
     let mut dispatcher = Dispatcher::builder(bot.clone(), handler)
-        .dependencies(dptree::deps![db, rules, ai, config, event_tx])
+        .dependencies(dptree::deps![
+            db,
+            rules,
+            ai,
+            config,
+            event_tx,
+            redirect_service
+        ])
         .enable_ctrlc_handler()
         .build();
 
@@ -57,9 +73,7 @@ pub async fn run_bot(
             if let Some(secret) = webhook_secret {
                 opts = opts.secret_token(secret);
             }
-            tracing::info!(
-                "Avvio in modalita' WEBHOOK: bind={addr}, public_url={url}"
-            );
+            tracing::info!("Avvio in modalita' WEBHOOK: bind={addr}, public_url={url}");
             match webhooks::axum(bot, opts).await {
                 Ok(listener) => {
                     dispatcher
@@ -225,7 +239,7 @@ pub async fn handle_chosen_inline_result(
 }
 
 #[tracing::instrument(
-    skip(bot, db, rules, ai, config, event_tx),
+    skip(bot, db, rules, ai, config, event_tx, redirect_service),
     fields(chat_id = %msg.chat.id, user_id)
 )]
 pub async fn handle_edited_message(
@@ -236,13 +250,14 @@ pub async fn handle_edited_message(
     ai: AiEngine,
     config: crate::config::Config,
     event_tx: tokio::sync::broadcast::Sender<serde_json::Value>,
+    redirect_service: RedirectService,
 ) -> ResponseResult<()> {
     tracing::info!(chat_id = %msg.chat.id, msg_id = %msg.id, "Elaborazione messaggio modificato");
-    handle_message(bot, msg, db, rules, ai, config, event_tx).await
+    handle_message(bot, msg, db, rules, ai, config, event_tx, redirect_service).await
 }
 
 #[tracing::instrument(
-    skip(bot, db, rules, ai, config, event_tx),
+    skip(bot, db, rules, ai, config, event_tx, redirect_service),
     fields(chat_id = %msg.chat.id, user_id)
 )]
 #[allow(clippy::too_many_lines)]
@@ -254,6 +269,7 @@ pub async fn handle_message(
     ai: AiEngine,
     config: crate::config::Config,
     event_tx: tokio::sync::broadcast::Sender<serde_json::Value>,
+    redirect_service: RedirectService,
 ) -> ResponseResult<()> {
     let user_id = msg
         .from
@@ -356,6 +372,24 @@ pub async fn handle_message(
             };
 
             match cmd {
+                "/redirect" => {
+                    let arg = msg_text
+                        .splitn(2, char::is_whitespace)
+                        .nth(1)
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    let bot = bot.clone();
+                    let svc = redirect_service.clone();
+                    let tr = tr.clone();
+                    tokio::spawn(async move {
+                        let reply = build_redirect_reply(&svc, &arg, &tr).await;
+                        let _ = bot
+                            .send_message(chat_id, reply)
+                            .parse_mode(ParseMode::Html)
+                            .await;
+                    });
+                }
                 "/start" => {
                     tokio::spawn({
                         let bot = bot.clone();
@@ -380,24 +414,33 @@ pub async fn handle_message(
                             let stats_text = if let Ok(config) = db.get_user_config(user_id).await {
                                 // Generate progress bar (activity level based on cleaned count)
                                 let activity_level = (config.cleaned_count.min(100) / 10) as usize;
-                                let progress_bar = "█".repeat(activity_level) + &"░".repeat(10 - activity_level);
-                                
-                                // Get additional stats  
+                                let progress_bar =
+                                    "█".repeat(activity_level) + &"░".repeat(10 - activity_level);
+
+                                // Get additional stats
                                 let global_stats = db.get_global_stats().await.ok();
-                                let total_users = global_stats.as_ref().map(|(u, _)| *u).unwrap_or(0);
-                                let total_cleaned = global_stats.as_ref().map(|(_, c)| *c).unwrap_or(0);
-                                
+                                let total_users =
+                                    global_stats.as_ref().map(|(u, _)| *u).unwrap_or(0);
+                                let total_cleaned =
+                                    global_stats.as_ref().map(|(_, c)| *c).unwrap_or(0);
+
                                 let user_rank = if total_cleaned > 0 {
                                     let top_users = db.get_top_users(10).await.ok();
                                     top_users
                                         .as_ref()
-                                        .and_then(|users| users.iter().position(|(uid, _)| *uid == user_id))
+                                        .and_then(|users| {
+                                            users.iter().position(|(uid, _)| *uid == user_id)
+                                        })
                                         .map(|pos| format!("#{}", pos + 1))
                                         .unwrap_or_else(|| ">10".to_string())
                                 } else {
-                                    if config.cleaned_count > 0 { "#1".to_string() } else { "N/A".to_string() }
+                                    if config.cleaned_count > 0 {
+                                        "#1".to_string()
+                                    } else {
+                                        "N/A".to_string()
+                                    }
                                 };
-                                
+
                                 format!(
                                     "<b>📊 Le Tue Statistiche</b>\n\n\
                                     🔗 URL Elaborati: <code>{}</code>\n\
@@ -416,10 +459,26 @@ pub async fn handle_message(
                                     user_rank,
                                     activity_level,
                                     progress_bar,
-                                    if config.language == "it" { "Italiano 🇮🇹" } else { "English 🇬🇧" },
-                                    if config.is_ai_enabled() { "Attivo ✨" } else { "Disattivo" },
-                                    if config.privacy_mode != 0 { "Attivo" } else { "Disattivo" },
-                                    if config.mode == "delete" { "Elimina msg" } else { "Rispondi" },
+                                    if config.language == "it" {
+                                        "Italiano 🇮🇹"
+                                    } else {
+                                        "English 🇬🇧"
+                                    },
+                                    if config.is_ai_enabled() {
+                                        "Attivo ✨"
+                                    } else {
+                                        "Disattivo"
+                                    },
+                                    if config.privacy_mode != 0 {
+                                        "Attivo"
+                                    } else {
+                                        "Disattivo"
+                                    },
+                                    if config.mode == "delete" {
+                                        "Elimina msg"
+                                    } else {
+                                        "Rispondi"
+                                    },
                                     total_users,
                                     total_cleaned
                                 )
@@ -439,9 +498,11 @@ pub async fn handle_message(
                         let db = db.clone();
                         let _tr = tr.clone();
                         async move {
-                            let history_text = if let Ok(links) = db.get_history(user_id, 10).await {
+                            let history_text = if let Ok(links) = db.get_history(user_id, 10).await
+                            {
                                 if links.is_empty() {
-                                    "🕐 <b>Cronologia Vuota</b>\n\nAncora non hai pulito nessun URL".to_string()
+                                    "🕐 <b>Cronologia Vuota</b>\n\nAncora non hai pulito nessun URL"
+                                        .to_string()
                                 } else {
                                     let mut text = String::from("<b>🕐 Ultimi URL Puliti</b>\n\n");
                                     for (idx, link) in links.iter().enumerate() {
@@ -455,7 +516,7 @@ pub async fn handle_message(
                                         } else {
                                             link.cleaned_url.clone()
                                         };
-                                        
+
                                         text.push_str(&format!(
                                             "{}. <code>{}</code>\n   → <code>{}</code>\n   via <b>{}</b>\n\n",
                                             idx + 1, original_clean, cleaned_clean, link.provider_name.as_deref().unwrap_or("Unknown")
@@ -487,10 +548,13 @@ pub async fn handle_message(
                 "/whitelist_add" => {
                     let args: Vec<&str> = text.split_whitespace().collect();
                     if args.len() < 2 {
-                        bot.send_message(chat_id, "❌ Uso: <code>/whitelist_add example.com</code>")
-                            .parse_mode(ParseMode::Html)
-                            .await
-                            .ok();
+                        bot.send_message(
+                            chat_id,
+                            "❌ Uso: <code>/whitelist_add example.com</code>",
+                        )
+                        .parse_mode(ParseMode::Html)
+                        .await
+                        .ok();
                     } else {
                         let domain = args[1].to_string();
                         let db = db.clone();
@@ -498,14 +562,20 @@ pub async fn handle_message(
                         tokio::spawn(async move {
                             match db.add_to_whitelist(user_id, &domain).await {
                                 Ok(_) => {
-                                    let _ = bot.send_message(chat_id, 
-                                        format!("✅ <b>{}</b> aggiunto alla whitelist", domain))
+                                    let _ = bot
+                                        .send_message(
+                                            chat_id,
+                                            format!("✅ <b>{}</b> aggiunto alla whitelist", domain),
+                                        )
                                         .parse_mode(ParseMode::Html)
                                         .await;
                                 }
                                 Err(_) => {
-                                    let _ = bot.send_message(chat_id, 
-                                        format!("⚠️ <b>{}</b> è già nella whitelist", domain))
+                                    let _ = bot
+                                        .send_message(
+                                            chat_id,
+                                            format!("⚠️ <b>{}</b> è già nella whitelist", domain),
+                                        )
                                         .parse_mode(ParseMode::Html)
                                         .await;
                                 }
@@ -516,23 +586,30 @@ pub async fn handle_message(
                 "/whitelist_remove" => {
                     let args: Vec<&str> = text.split_whitespace().collect();
                     if args.len() < 2 {
-                        bot.send_message(chat_id, "❌ Uso: <code>/whitelist_remove example.com</code>")
-                            .parse_mode(ParseMode::Html)
-                            .await
-                            .ok();
+                        bot.send_message(
+                            chat_id,
+                            "❌ Uso: <code>/whitelist_remove example.com</code>",
+                        )
+                        .parse_mode(ParseMode::Html)
+                        .await
+                        .ok();
                     } else {
                         let domain = args[1].to_string();
                         let db = db.clone();
                         tokio::spawn(async move {
                             match db.remove_from_whitelist(user_id, &domain).await {
                                 Ok(_) => {
-                                    let _ = bot.send_message(chat_id, 
-                                        format!("✅ <b>{}</b> rimosso dalla whitelist", domain))
+                                    let _ = bot
+                                        .send_message(
+                                            chat_id,
+                                            format!("✅ <b>{}</b> rimosso dalla whitelist", domain),
+                                        )
                                         .parse_mode(ParseMode::Html)
                                         .await;
                                 }
                                 Err(_) => {
-                                    let _ = bot.send_message(chat_id, "❌ Errore nella rimozione")
+                                    let _ = bot
+                                        .send_message(chat_id, "❌ Errore nella rimozione")
                                         .await;
                                 }
                             }
@@ -547,19 +624,26 @@ pub async fn handle_message(
                                 let text = if domains.is_empty() {
                                     "⭐ <b>La Tua Whitelist</b>\n\nVuota. Aggiungi domini con <code>/whitelist_add</code>".to_string()
                                 } else {
-                                    let items = domains.iter().enumerate()
+                                    let items = domains
+                                        .iter()
+                                        .enumerate()
                                         .map(|(i, d)| format!("{}. <code>{}</code>", i + 1, d))
                                         .collect::<Vec<_>>()
                                         .join("\n");
-                                    format!("⭐ <b>La Tua Whitelist</b> ({})\n\n{}", domains.len(), items)
+                                    format!(
+                                        "⭐ <b>La Tua Whitelist</b> ({})\n\n{}",
+                                        domains.len(),
+                                        items
+                                    )
                                 };
-                                let _ = bot.send_message(chat_id, text)
+                                let _ = bot
+                                    .send_message(chat_id, text)
                                     .parse_mode(ParseMode::Html)
                                     .await;
                             }
                             Err(_) => {
-                                let _ = bot.send_message(chat_id, "❌ Errore nel caricamento")
-                                    .await;
+                                let _ =
+                                    bot.send_message(chat_id, "❌ Errore nel caricamento").await;
                             }
                         }
                     });
@@ -573,7 +657,7 @@ pub async fn handle_message(
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .map(|d| d.as_secs())
                                     .unwrap_or(0);
-                                
+
                                 let json_data = serde_json::json!({
                                     "user_id": user_id,
                                     "exported_at": now,
@@ -586,8 +670,9 @@ pub async fn handle_message(
                                         })
                                     }).collect::<Vec<_>>()
                                 });
-                                
-                                let json_str = serde_json::to_string_pretty(&json_data).unwrap_or_default();
+
+                                let json_str =
+                                    serde_json::to_string_pretty(&json_data).unwrap_or_default();
                                 let truncated = if json_str.len() > 1000 {
                                     format!("{}...[truncated]", &json_str[..1000])
                                 } else {
@@ -598,13 +683,15 @@ pub async fn handle_message(
                                     <i>Ultimi 50 URL. Per il bulk export, contatta l'admin.</i>",
                                     truncated
                                 );
-                                
-                                let _ = bot.send_message(chat_id, export_msg)
+
+                                let _ = bot
+                                    .send_message(chat_id, export_msg)
                                     .parse_mode(ParseMode::Html)
                                     .await;
                             }
                             Err(_) => {
-                                let _ = bot.send_message(chat_id, "❌ Errore nell'esportazione")
+                                let _ = bot
+                                    .send_message(chat_id, "❌ Errore nell'esportazione")
                                     .await;
                             }
                         }
@@ -621,7 +708,7 @@ pub async fn handle_message(
                         • Elevate: ∞ (Premium)\n\n\
                         💡 Il bot <b>cerca scansioni esistenti</b> prima di sottomettere, \
                         risparmiando quota del 70%";
-                    
+
                     bot.send_message(chat_id, limits_msg)
                         .parse_mode(ParseMode::Html)
                         .await
@@ -643,13 +730,26 @@ pub async fn handle_message(
                                             2 => "🥉",
                                             _ => "  ",
                                         };
-                                        msg.push_str(&format!("{} #{}. <code>{}</code> URL puliti\n", medal, idx + 1, count));
+                                        msg.push_str(&format!(
+                                            "{} #{}. <code>{}</code> URL puliti\n",
+                                            medal,
+                                            idx + 1,
+                                            count
+                                        ));
                                     }
-                                    let _ = bot.send_message(chat_id, msg).parse_mode(ParseMode::Html).await;
+                                    let _ = bot
+                                        .send_message(chat_id, msg)
+                                        .parse_mode(ParseMode::Html)
+                                        .await;
                                 }
                             }
                             Err(_) => {
-                                let _ = bot.send_message(chat_id, "❌ Errore nel caricamento della leaderboard").await;
+                                let _ = bot
+                                    .send_message(
+                                        chat_id,
+                                        "❌ Errore nel caricamento della leaderboard",
+                                    )
+                                    .await;
                             }
                         }
                     });
@@ -662,26 +762,37 @@ pub async fn handle_message(
                                 if top_links.is_empty() {
                                     let _ = bot.send_message(chat_id, "📈 <b>URL Trending</b>\n\nAncora nessun URL processato").parse_mode(ParseMode::Html).await;
                                 } else {
-                                    let mut msg = String::from("📈 <b>Top 10 URL Più Puliti</b>\n\n");
+                                    let mut msg =
+                                        String::from("📈 <b>Top 10 URL Più Puliti</b>\n\n");
                                     for (idx, (url, count)) in top_links.iter().enumerate() {
                                         let url_short = if url.len() > 50 {
                                             format!("{}...", &url[..47])
                                         } else {
                                             url.clone()
                                         };
-                                        msg.push_str(&format!("{}. <code>{}</code> ({} volte)\n", idx + 1, url_short, count));
+                                        msg.push_str(&format!(
+                                            "{}. <code>{}</code> ({} volte)\n",
+                                            idx + 1,
+                                            url_short,
+                                            count
+                                        ));
                                     }
-                                    let _ = bot.send_message(chat_id, msg).parse_mode(ParseMode::Html).await;
+                                    let _ = bot
+                                        .send_message(chat_id, msg)
+                                        .parse_mode(ParseMode::Html)
+                                        .await;
                                 }
                             }
                             Err(_) => {
-                                let _ = bot.send_message(chat_id, "❌ Errore nel caricamento dei trending").await;
+                                let _ = bot
+                                    .send_message(chat_id, "❌ Errore nel caricamento dei trending")
+                                    .await;
                             }
                         }
                     });
                 }
                 "/domains" => {
-                    // Smart URL grouping by domain  
+                    // Smart URL grouping by domain
                     let db = db.clone();
                     tokio::spawn(async move {
                         match db.get_domain_cleanup_stats(user_id).await {
@@ -689,15 +800,29 @@ pub async fn handle_message(
                                 if domains.is_empty() {
                                     let _ = bot.send_message(chat_id, "🌐 <b>Statistiche per Dominio</b>\n\nAncora nessun URL processato").parse_mode(ParseMode::Html).await;
                                 } else {
-                                    let mut msg = String::from("🌐 <b>Tuoi Domini Più Puliti</b>\n\n");
+                                    let mut msg =
+                                        String::from("🌐 <b>Tuoi Domini Più Puliti</b>\n\n");
                                     for (idx, (domain, count)) in domains.iter().enumerate() {
-                                        msg.push_str(&format!("{}. <code>{}</code> — <b>{}</b> pulizie\n", idx + 1, domain, count));
+                                        msg.push_str(&format!(
+                                            "{}. <code>{}</code> — <b>{}</b> pulizie\n",
+                                            idx + 1,
+                                            domain,
+                                            count
+                                        ));
                                     }
-                                    let _ = bot.send_message(chat_id, msg).parse_mode(ParseMode::Html).await;
+                                    let _ = bot
+                                        .send_message(chat_id, msg)
+                                        .parse_mode(ParseMode::Html)
+                                        .await;
                                 }
                             }
                             Err(_) => {
-                                let _ = bot.send_message(chat_id, "❌ Errore nel caricamento delle statistiche per dominio").await;
+                                let _ = bot
+                                    .send_message(
+                                        chat_id,
+                                        "❌ Errore nel caricamento delle statistiche per dominio",
+                                    )
+                                    .await;
                             }
                         }
                     });
@@ -1011,7 +1136,7 @@ pub async fn handle_message(
         let domain = extract_domain(&url_str)
             .or_else(|_| extract_domain(&expanded_url))
             .unwrap_or_default();
-        
+
         let is_whitelisted = if !domain.is_empty() {
             db.is_whitelisted(user_id, &domain).await.unwrap_or(false)
         } else {
@@ -1046,7 +1171,6 @@ pub async fn handle_message(
         } else {
             tracing::info!(domain = %domain, "URL saltato: dominion in whitelist");
         }
-
 
         if !rules.is_supported_by_clearurls(&expanded_url) {
             tracing::debug!(url = %rules.redact_sensitive(&expanded_url), "URL non supportato da ClearURLs, skip pulizia");
@@ -1166,7 +1290,7 @@ pub async fn handle_message(
         🔗 URL puliti: <code>{}</code>\n",
         cleaned_urls.len()
     );
-    
+
     if total_params_removed > 0 {
         response.push_str(&stats_line);
         response.push_str(&format!(
@@ -1184,7 +1308,7 @@ pub async fn handle_message(
 
     // Enhanced link display with visual separators
     response.push_str("🌐 <b>Link puliti:</b>\n");
-    
+
     if cleaned_urls.len() == 1 {
         let clean = cleaned_urls[0].1.trim();
         let escaped_url = html::escape(clean);
@@ -1197,8 +1321,13 @@ pub async fn handle_message(
         for (idx, (_, cleaned, _)) in cleaned_urls.iter().enumerate() {
             let clean = cleaned.trim();
             let escaped_url = html::escape(clean);
-            let link_entry = format!("{} <a href=\"{escaped_url}\">{escaped_url}</a>\n",
-                if idx == cleaned_urls.len() - 1 { "└─" } else { "├─" }
+            let link_entry = format!(
+                "{} <a href=\"{escaped_url}\">{escaped_url}</a>\n",
+                if idx == cleaned_urls.len() - 1 {
+                    "└─"
+                } else {
+                    "├─"
+                }
             );
 
             if response.len() + link_entry.len() > MAX_MESSAGE_LENGTH {
@@ -1243,21 +1372,21 @@ pub async fn check_url_combined(url: &str) -> Option<String> {
     // Call both services concurrently for efficiency
     let vt_result = check_url_virustotal(url);
     let urlscan_result = check_url_urlscan(url);
-    
+
     let (vt_msg, urlscan_msg) = tokio::join!(vt_result, urlscan_result);
-    
+
     // Only send a message if at least one service detected a threat
     if vt_msg.is_none() && urlscan_msg.is_none() {
         return None;
     }
-    
+
     // Build the consolidated message
     let mut consolidated = String::from(
         "🚨 <b>ALLERTA SICUREZZA</b> 🚨\n\
         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
-        🔴 <b>MINACCIA RILEVATA - REPORT CONSOLIDATO</b>\n\n"
+        🔴 <b>MINACCIA RILEVATA - REPORT CONSOLIDATO</b>\n\n",
     );
-    
+
     // Extract key information from VirusTotal alert if present
     if let Some(vt_alert) = vt_msg {
         consolidated.push_str("🛡️ <b>VirusTotal Security Scan:</b>\n");
@@ -1278,7 +1407,7 @@ pub async fn check_url_combined(url: &str) -> Option<String> {
         }
         consolidated.push_str("\n\n");
     }
-    
+
     // Extract key information from URLScan alert if present
     if let Some(urlscan_alert) = urlscan_msg {
         consolidated.push_str("🌐 <b>URLScan.io Web Reputation:</b>\n");
@@ -1299,13 +1428,13 @@ pub async fn check_url_combined(url: &str) -> Option<String> {
         }
         consolidated.push_str("\n\n");
     }
-    
+
     // Add final warning
     consolidated.push_str(
         "⚠️ <b>ATTENZIONE:</b> Questo link è stato segnalato come pericoloso.\n\
-        Si consiglia di NON visitare la pagina."
+        Si consiglia di NON visitare la pagina.",
     );
-    
+
     Some(consolidated)
 }
 
@@ -1612,7 +1741,7 @@ async fn search_existing_urlscan(url: &str, api_key: &str) -> Option<String> {
 
     // URLScan Search API: search for the exact URL using query parameter
     let search_query = format!("domain:{}", url.split('/').nth(2).unwrap_or(url));
-    
+
     let search_resp = match client
         .get("https://urlscan.io/api/v1/search/")
         .header("API-Key", api_key)
@@ -1681,7 +1810,7 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
     // First, try to find an existing scan
     let mut uuid = search_existing_urlscan(url, &api_key).await;
     let mut result_link = "https://urlscan.io".to_string();
-    
+
     // If not found, submit a new scan
     if uuid.is_none() {
         let submit_resp = match client
@@ -1698,7 +1827,8 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
                     return None;
                 }
                 return Some(
-                    "⚠️ <b>URLScan.io non raggiungibile</b>\nRiprova tra qualche minuto.".to_string(),
+                    "⚠️ <b>URLScan.io non raggiungibile</b>\nRiprova tra qualche minuto."
+                        .to_string(),
                 );
             }
         };
@@ -1715,11 +1845,11 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
 
         if !submit_resp.status().is_success() {
             let status_code = submit_resp.status();
-            
+
             // Try to extract error details from response body
             let error_details = if let Ok(error_body) = submit_resp.text().await {
                 // Check for specific error messages from URLScan.io
-                
+
                 // Technical errors that should respect alert_only mode
                 if error_body.contains("URL is too long") || error_body.contains("length") {
                     tracing::warn!(url = %url, "URLScan.io: URL troppo lungo");
@@ -1734,16 +1864,18 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
                         ℹ️ Questo link è troppo lungo per essere scansionato.\n\n\
                         💡 <b>Suggerimento:</b>\n\
                         Prova ad accorciare l'URL usando un servizio\n\
-                        di URL shortener (es: bit.ly, tinyurl, ecc.)".to_string()
+                        di URL shortener (es: bit.ly, tinyurl, ecc.)"
+                            .to_string(),
                     );
                 }
-                
+
                 // URLScan blocked the scan for technical reasons (not because URL is malicious)
-                if error_body.contains("Scan prevented") 
+                if error_body.contains("Scan prevented")
                     || error_body.contains("blocked from scanning")
-                    || error_body.contains("URL was blocked") {
+                    || error_body.contains("URL was blocked")
+                {
                     tracing::warn!(
-                        url = %url, 
+                        url = %url,
                         error = %error_body,
                         "URLScan.io: Scansione bloccata per motivi tecnici (non sicurezza)"
                     );
@@ -1756,19 +1888,19 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
                     // Just log it and skip
                     return None;
                 }
-                
+
                 error_body
             } else {
                 "Unknown error".to_string()
             };
-            
+
             tracing::warn!(
                 status = %status_code,
                 error = %error_details,
                 url = %url,
                 "URLScan.io API error"
             );
-            
+
             if alert_only {
                 return None;
             }
@@ -1794,14 +1926,17 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
                 if alert_only {
                     return None;
                 }
-                return Some("⚠️ <b>ERRORE SCANSIONE</b>\n\
+                return Some(
+                    "⚠️ <b>ERRORE SCANSIONE</b>\n\
                 ━━━━━━━━━━━━━━━━\n\
                 📌 <b>URLScan.io</b>\n\n\
                 🔧 <b>Risposta non valida</b>\n\n\
                 ℹ️ <i>Il servizio ha dato una risposta non riconoscibile.</i>\n\n\
                 💡 <b>Prova:</b>\n\
                 • Riprova tra 1-2 minuti\n\
-                • Assicurati che l'URL sia valido".to_string());
+                • Assicurati che l'URL sia valido"
+                        .to_string(),
+                );
             }
         };
 
@@ -1826,7 +1961,7 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
                 result_link
             ));
         }
-        
+
         // Wait a bit for the scan to start processing before polling
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
     }
@@ -1872,8 +2007,8 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
             .trim()
             .to_ascii_lowercase();
 
-        potentially_malicious = verdict_text.contains("potentially malicious")
-            || verdict_text.contains("suspicious");
+        potentially_malicious =
+            verdict_text.contains("potentially malicious") || verdict_text.contains("suspicious");
 
         score = result_json["verdicts"]["overall"]["score"]
             .as_f64()
@@ -1907,9 +2042,7 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
             \n🔒 <b>ATTENZIONE:</b> Pagina web sospetta\n\
             Potrebbe contenere phishing o malware.\n\n\
             📋 <a href=\"{}\">Visualizza Scansione Completa ›</a>",
-            score,
-            verdict_label,
-            result_link
+            score, verdict_label, result_link
         );
 
         return Some(msg);
@@ -2992,9 +3125,52 @@ fn extract_domain(url: &str) -> Result<String, Box<dyn std::error::Error>> {
     } else {
         format!("https://{}", url)
     };
-    
+
     let url_obj = url::Url::parse(&url_str)?;
     Ok(url_obj.host_str().unwrap_or("").to_string())
+}
+
+/// Build a Telegram-ready reply for the `/redirect <url>` command.
+///
+/// Kept as a free function (rather than inlined in the command match arm) so
+/// it can be unit-tested against a [`RedirectService`] backed by stub data.
+async fn build_redirect_reply(
+    svc: &RedirectService,
+    arg: &str,
+    tr: &crate::i18n::Translations,
+) -> String {
+    let is_it = tr.welcome.contains("Benvenuto") || tr.welcome.contains("benvenuto");
+    if arg.is_empty() {
+        return if is_it {
+            "ℹ️ Uso: <code>/redirect &lt;url&gt;</code>\nEsempio: <code>/redirect youtube.com</code>".into()
+        } else {
+            "ℹ️ Usage: <code>/redirect &lt;url&gt;</code>\nExample: <code>/redirect youtube.com</code>".into()
+        };
+    }
+    match svc.lookup(arg).await {
+        Ok(Some(hit)) => format_hit_html(&hit, 5),
+        Ok(None) => {
+            if is_it {
+                format!(
+                    "🤷 Nessun frontend alternativo conosciuto per <code>{}</code>.",
+                    html::escape(arg)
+                )
+            } else {
+                format!(
+                    "🤷 No known alternative frontend for <code>{}</code>.",
+                    html::escape(arg)
+                )
+            }
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, arg = %arg, "redirect lookup failed");
+            if is_it {
+                "⚠️ Impossibile contattare le sorgenti di redirect. Riprova più tardi.".into()
+            } else {
+                "⚠️ Could not reach redirect catalogues. Please retry later.".into()
+            }
+        }
+    }
 }
 
 #[cfg(test)]

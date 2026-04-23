@@ -64,11 +64,9 @@ impl HealthCheck {
 
     async fn check_database(&self, db: &crate::db::Db) -> DatabaseStatus {
         let start = std::time::Instant::now();
-        
+
         // Simple ping query
-        let result = sqlx::query("SELECT 1")
-            .fetch_one(&db.pool)
-            .await;
+        let result = sqlx::query("SELECT 1").fetch_one(&db.pool).await;
 
         let response_time = start.elapsed().as_millis() as u64;
 

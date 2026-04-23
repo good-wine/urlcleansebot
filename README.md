@@ -146,6 +146,7 @@ podman run -d --name clear_urls_bot --pod clear_urls_bot_pod -p 3000:3000 --env-
 - Caching risultati pulizia: cache interna per URL ripetuti
 - Ottimizzazione DB/async: query asincrone, pooling, batch
 - Webhook HTTPS: supportato nativamente, attivabile con `WEBHOOK_URL` + `WEBHOOK_SECRET`
+- Comando `/redirect <url>`: restituisce frontend alternativi (Invidious, Piped, Nitter, Teddit, …) recuperati da LibRedirect e Farside, con cache TTL 6h
 
 ## 🛡️ Sicurezza e Best Practice
 

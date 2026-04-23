@@ -257,7 +257,9 @@ impl Db {
                 PRIMARY KEY (user_id, feature_name)
             )"
         };
-        sqlx::query(create_feature_flags).execute(&self.pool).await?;
+        sqlx::query(create_feature_flags)
+            .execute(&self.pool)
+            .await?;
 
         // Rate limiting table
         let create_rate_limits = if is_sqlite {
@@ -502,7 +504,7 @@ impl Db {
             .bind(now)
             .execute(&self.pool)
             .await?;
-        
+
         Ok(())
     }
 
@@ -512,30 +514,30 @@ impl Db {
             .bind(domain)
             .execute(&self.pool)
             .await?;
-        
+
         Ok(())
     }
 
     pub async fn get_whitelist(&self, user_id: i64) -> Result<Vec<String>> {
         let rows = sqlx::query_as::<_, (String,)>(
-            "SELECT domain FROM whitelist_urls WHERE user_id = ? ORDER BY added_at DESC"
+            "SELECT domain FROM whitelist_urls WHERE user_id = ? ORDER BY added_at DESC",
         )
         .bind(user_id)
         .fetch_all(&self.pool)
         .await?;
-        
+
         Ok(rows.into_iter().map(|(domain,)| domain).collect())
     }
 
     pub async fn is_whitelisted(&self, user_id: i64, domain: &str) -> Result<bool> {
         let result = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM whitelist_urls WHERE user_id = ? AND domain = ?"
+            "SELECT COUNT(*) FROM whitelist_urls WHERE user_id = ? AND domain = ?",
         )
         .bind(user_id)
         .bind(domain)
         .fetch_one(&self.pool)
         .await?;
-        
+
         Ok(result > 0)
     }
 
@@ -554,18 +556,23 @@ impl Db {
         .bind(user_id)
         .fetch_all(&self.pool)
         .await?;
-        
+
         Ok(rows)
     }
 
     // Feature flags implementation
     /// Set a feature flag for a user
-    pub async fn set_feature_flag(&self, user_id: i64, feature_name: &str, enabled: bool) -> Result<()> {
+    pub async fn set_feature_flag(
+        &self,
+        user_id: i64,
+        feature_name: &str,
+        enabled: bool,
+    ) -> Result<()> {
         let enabled_val = if enabled { 1 } else { 0 };
-        
+
         sqlx::query(
             "INSERT INTO feature_flags (user_id, feature_name, enabled) VALUES (?, ?, ?)
-             ON CONFLICT(user_id, feature_name) DO UPDATE SET enabled = ?"
+             ON CONFLICT(user_id, feature_name) DO UPDATE SET enabled = ?",
         )
         .bind(user_id)
         .bind(feature_name)
@@ -573,45 +580,53 @@ impl Db {
         .bind(enabled_val)
         .execute(&self.pool)
         .await?;
-        
+
         Ok(())
     }
 
     /// Check if a feature is enabled for a user
     pub async fn is_feature_enabled(&self, user_id: i64, feature_name: &str) -> Result<bool> {
         let result = sqlx::query_scalar::<_, i32>(
-            "SELECT enabled FROM feature_flags WHERE user_id = ? AND feature_name = ?"
+            "SELECT enabled FROM feature_flags WHERE user_id = ? AND feature_name = ?",
         )
         .bind(user_id)
         .bind(feature_name)
         .fetch_optional(&self.pool)
         .await?;
-        
+
         Ok(result.unwrap_or(0) != 0)
     }
 
     /// Get all feature flags for a user
     pub async fn get_user_features(&self, user_id: i64) -> Result<Vec<(String, bool)>> {
         let rows = sqlx::query_as::<_, (String, i32)>(
-            "SELECT feature_name, enabled FROM feature_flags WHERE user_id = ?"
+            "SELECT feature_name, enabled FROM feature_flags WHERE user_id = ?",
         )
         .bind(user_id)
         .fetch_all(&self.pool)
         .await?;
-        
-        Ok(rows.into_iter().map(|(name, enabled)| (name, enabled != 0)).collect())
+
+        Ok(rows
+            .into_iter()
+            .map(|(name, enabled)| (name, enabled != 0))
+            .collect())
     }
 
     // Rate limiting implementation
     /// Check if user has exceeded rate limit (configurable actions per hour)
-    pub async fn check_rate_limit(&self, user_id: i64, max_actions: i64, window_seconds: i64) -> Result<bool> {
+    pub async fn check_rate_limit(
+        &self,
+        user_id: i64,
+        max_actions: i64,
+        window_seconds: i64,
+    ) -> Result<bool> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs() as i64;
 
         // Get current rate limit status
         let current = sqlx::query_as::<_, (i64, i64, i64)>(
-            "SELECT action_count, window_start, last_action FROM rate_limits WHERE user_id = ?"
+            "SELECT action_count, window_start, last_action FROM rate_limits WHERE user_id = ?",
         )
         .bind(user_id)
         .fetch_optional(&self.pool)
@@ -664,12 +679,12 @@ impl Db {
     /// Get rate limit status for a user
     pub async fn get_rate_limit_status(&self, user_id: i64) -> Result<Option<(i64, i64)>> {
         let result = sqlx::query_as::<_, (i64, i64)>(
-            "SELECT action_count, window_start FROM rate_limits WHERE user_id = ?"
+            "SELECT action_count, window_start FROM rate_limits WHERE user_id = ?",
         )
         .bind(user_id)
         .fetch_optional(&self.pool)
         .await?;
-        
+
         Ok(result)
     }
 
@@ -679,8 +694,7 @@ impl Db {
             .bind(user_id)
             .execute(&self.pool)
             .await?;
-        
+
         Ok(())
     }
 }
-

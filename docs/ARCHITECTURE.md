@@ -221,6 +221,7 @@ podman run --pod clear_urls_bot_pod clear_urls_bot
 - Caching risultati pulizia: cache interna per URL ripetuti
 - Ottimizzazione DB/async: query asincrone, pooling, batch
 - Webhook HTTPS: supportato nativamente (teloxide + axum), attivabile via `WEBHOOK_URL` / `WEBHOOK_SECRET` / `PORT`
+- Modulo `redirects::`: lookup frontend alternativi tramite LibRedirect + Farside, cache TTL via moka, esposto col comando `/redirect`
 - Integrazione VirusTotal: controllo link sospetti, avviso all’utente
 
 ## 🔧 Development Architecture
