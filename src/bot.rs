@@ -1986,9 +1986,19 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
 
     for _ in 0..4 {
         tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-        let result_endpoint = format!("https://urlscan.io/api/v1/result/{}/", safe_uuid);
+        let mut result_endpoint = match reqwest::Url::parse("https://urlscan.io/") {
+            Ok(url) => url,
+            Err(_) => continue,
+        };
+        {
+            let mut segments = match result_endpoint.path_segments_mut() {
+                Ok(path) => path,
+                Err(_) => continue,
+            };
+            segments.extend(["api", "v1", "result", &safe_uuid, ""]);
+        }
         let result_resp = match client
-            .get(&result_endpoint)
+            .get(result_endpoint)
             .header("API-Key", &api_key)
             .send()
             .await
