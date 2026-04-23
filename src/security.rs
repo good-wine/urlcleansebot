@@ -19,13 +19,14 @@ impl RateLimiter {
         }
     }
 
-    /// Returns true if allowed, false if rate-limited
+    /// Returns true if allowed, false if rate-limited.
     pub fn check(&self, user_id: i64) -> bool {
         let mut users = match self.users.lock() {
             Ok(u) => u,
-            Err(e) => {
-                log::error!("Errore nel lock users: {}", e);
-                return true;
+            Err(poisoned) => {
+                // Recover from a poisoned mutex rather than panicking.
+                log::error!("RateLimiter mutex poisoned, recovering: {poisoned}");
+                poisoned.into_inner()
             }
         };
         let now = Instant::now();
@@ -40,37 +41,40 @@ impl RateLimiter {
 }
 
 /// Global rate limiter instance (1 request/sec per user)
-pub static RATE_LIMITER: Lazy<RateLimiter> = Lazy::new(|| RateLimiter::new(Duration::from_secs(1)));
+pub static RATE_LIMITER: Lazy<RateLimiter> =
+    Lazy::new(|| RateLimiter::new(Duration::from_secs(1)));
 
-mod input_sanitizer {
-    /// Sanitizza l'input utente (base, estendibile)
-    use crate::sanitizer::validation::is_valid_url;
-
-    pub fn sanitize(input: &str) -> String {
-        let mut s = input.trim().replace(|c: char| c.is_control(), "");
-        if s.len() > 4000 {
-            s.truncate(4000);
-        }
-        if !is_valid_url(&s) {
-            log::error!("Input non valido: {}", s);
-            return String::new();
-        }
-        s
+/// Sanitise arbitrary user-supplied text (inline queries, command arguments,
+/// etc.).  Strips control characters and enforces a length cap.  This
+/// intentionally does **not** validate URL format — use
+/// [`sanitizer::validation::is_valid_url`] separately when a URL is required.
+pub fn sanitize_input(input: &str) -> String {
+    let mut s: String = input
+        .trim()
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect();
+    if s.len() > 4_000 {
+        // Truncate at a character boundary.
+        s = s.chars().take(4_000).collect();
     }
-
-    /// Sanitizza callback data senza validare come URL
-    pub fn sanitize_callback(input: &str) -> String {
-        let mut s = input.trim().replace(|c: char| c.is_control(), "");
-        if s.len() > 4000 {
-            s.truncate(4000);
-        }
-        s
-    }
+    s
 }
 
-pub use input_sanitizer::{sanitize as sanitize_input, sanitize_callback};
+/// Sanitise callback query data (not a URL — just safe ASCII trimming).
+pub fn sanitize_callback(input: &str) -> String {
+    let mut s: String = input
+        .trim()
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect();
+    if s.len() > 4_000 {
+        s = s.chars().take(4_000).collect();
+    }
+    s
+}
 
-/// Checks if a user is admin
+/// Checks if a user is admin.
 pub fn is_admin(user_id: i64, admin_id: i64) -> bool {
     user_id == admin_id
 }
