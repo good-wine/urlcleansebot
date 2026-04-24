@@ -390,6 +390,7 @@ pub async fn handle_message(
                             .parse_mode(ParseMode::Html)
                             .await;
                     });
+                    return Ok(());
                 }
                 "/start" => {
                     tokio::spawn({
