@@ -238,49 +238,6 @@ pub async fn handle_chosen_inline_result(
     );
     Ok(())
 }
-#[tracing::instrument(
-    skip(svc, arg, tr),
-    fields(is_it,  error)
-)]
-/// Build a Telegram-ready reply for the `/redirect <url>` command.
-async fn build_redirect_reply(
-    svc: &RedirectService,
-    arg: &str,
-    tr: &crate::i18n::Translations,
-) -> String {
-    let is_it = tr.welcome.contains("Benvenuto") || tr.welcome.contains("benvenuto");
-    if arg.is_empty() {
-        return if is_it {
-            "ℹ️ Uso: <code>/redirect &lt;url&gt;</code>\nEsempio: <code>/redirect youtube.com</code>".into()
-        } else {
-            "ℹ️ Usage: <code>/redirect &lt;url&gt;</code>\nExample: <code>/redirect youtube.com</code>".into()
-        };
-    }
-    match svc.lookup(arg).await {
-        Ok(Some(hit)) => format_hit_html(&hit, 5),
-        Ok(None) => {
-            if is_it {
-                format!(
-                    "🤷 Nessun frontend alternativo conosciuto per <code>{}</code>.",
-                    html::escape(arg)
-                )
-            } else {
-                format!(
-                    "🤷 No known alternative frontend for <code>{}</code>.",
-                    html::escape(arg)
-                )
-            }
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, arg = %arg, "redirect lookup failed");
-            if is_it {
-                "⚠️ Impossibile contattare le sorgenti di redirect. Riprova più tardi.".into()
-            } else {
-                "⚠️ Could not reach redirect catalogues. Please retry later.".into()
-            }
-        }
-    }
-}
 
 #[tracing::instrument(
     skip(bot, db, rules, ai, config, event_tx, redirect_service),
