@@ -1,4 +1,4 @@
-use crate::db::models::CustomRule;
+use crate::{db::models::CustomRule, http_utils::retry_http_request};
 use anyhow::{Context, Result};
 use moka::future::Cache;
 use regex::Regex;
@@ -97,7 +97,10 @@ impl RuleEngine {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()?;
-        let resp = client.get(&self.source_url).send().await?.text().await?;
+        let resp = retry_http_request(
+            || client.get(&self.source_url),
+            "download ClearURLs rules"
+        ).await?.text().await?;
 
         let data: ClearUrlsData =
             serde_json::from_str(&resp).context("Impossibile analizzare il JSON di ClearURLs")?;

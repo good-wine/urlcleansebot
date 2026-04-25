@@ -6,6 +6,10 @@ const DEFAULT_DATABASE_URL: &str = "sqlite:bot.db";
 const DEFAULT_PORT: &str = "3000";
 const DEFAULT_CLEARURLS_SOURCE: &str =
     "https://raw.githubusercontent.com/ClearURLs/Rules/refs/heads/master/data.min.json";
+const DEFAULT_LIBREDIRECT_URL: &str =
+    "https://raw.githubusercontent.com/libredirect/instances/main/data.json";
+const DEFAULT_FARSIDE_URL: &str =
+    "https://raw.githubusercontent.com/benbusby/farside/refs/heads/main/services-full.json";
 const DEFAULT_AI_API_BASE: &str = "https://api.openai.com/v1";
 const DEFAULT_AI_MODEL: &str = "gpt-3.5-turbo";
 const DEFAULT_INLINE_MAX_RESULTS: usize = 5;
@@ -19,6 +23,8 @@ pub struct Config {
     pub server_addr: String,
     pub admin_id: i64,
     pub clearurls_source: String,
+    pub libredirect_url: String,
+    pub farside_url: String,
     pub ai_api_key: Option<String>,
     pub ai_api_base: String,
     pub ai_model: String,
@@ -77,6 +83,16 @@ impl Config {
             DEFAULT_CLEARURLS_SOURCE.to_string()
         });
 
+        let libredirect_url = env::var("LIBREDIRECT_URL").unwrap_or_else(|_| {
+            log::error!("LIBREDIRECT_URL non trovato, uso default.");
+            DEFAULT_LIBREDIRECT_URL.to_string()
+        });
+
+        let farside_url = env::var("FARSIDE_URL").unwrap_or_else(|_| {
+            log::error!("FARSIDE_URL non trovato, uso default.");
+            DEFAULT_FARSIDE_URL.to_string()
+        });
+
         let ai_api_key = env::var("AI_API_KEY").ok().filter(|s| !s.is_empty());
         let ai_api_base = env::var("AI_API_BASE").unwrap_or_else(|_| {
             log::error!("AI_API_BASE non trovato, uso default.");
@@ -107,6 +123,8 @@ impl Config {
             server_addr,
             admin_id,
             clearurls_source,
+            libredirect_url,
+            farside_url,
             ai_api_key,
             ai_api_base,
             ai_model,

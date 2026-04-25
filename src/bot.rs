@@ -1,5 +1,6 @@
 use crate::{
     db::{models::UserConfig, Db},
+    http_utils::retry_http_request,
     i18n,
     redirects::{format_hit_html, RedirectService},
     sanitizer::{AiEngine, RuleEngine},
@@ -39,7 +40,7 @@ pub async fn run_bot(
     let webhook_secret = config.webhook_secret.clone();
     let port = config.port;
 
-    let redirect_service = match RedirectService::new() {
+    let redirect_service = match RedirectService::from_config(&config.libredirect_url, &config.farside_url) {
         Ok(svc) => svc,
         Err(e) => {
             tracing::error!("Impossibile inizializzare RedirectService: {e}");
@@ -373,25 +374,6 @@ pub async fn handle_message(
             };
 
             match cmd {
-                "/redirect" => {
-                    let arg = msg_text
-                        .splitn(2, char::is_whitespace)
-                        .nth(1)
-                        .unwrap_or("")
-                        .trim()
-                        .to_string();
-                    let bot = bot.clone();
-                    let svc = redirect_service.clone();
-                    let tr = tr.clone();
-                    tokio::spawn(async move {
-                        let reply = build_redirect_reply(&svc, &arg, &tr).await;
-                        let _ = bot
-                            .send_message(chat_id, reply)
-                            .parse_mode(ParseMode::Html)
-                            .await;
-                    });
-                    return Ok(());
-                }
                 "/start" => {
                     tokio::spawn({
                         let bot = bot.clone();
@@ -881,8 +863,12 @@ pub async fn handle_message(
                     .ok();
                 }
                 "/language" => {
-                    let mut msg_text = String::from("<b>Lingue disponibili:</b>\n\n");
-                    msg_text.push_str("🇮🇹 Italiano (/setlang it)\n🇬🇧 English (/setlang en)\n");
+                    let current_lang = if user_config.language == "it" { "Italiano 🇮🇹" } else { "English 🇬🇧" };
+                    let mut msg_text = format!("<b>🌐 Lingua Attuale: {}</b>\n\n", current_lang);
+                    msg_text.push_str("Scegli la lingua:\n\n");
+                    msg_text.push_str("🇮🇹 Italiano: <code>/setlang it</code>\n");
+                    msg_text.push_str("🇬🇧 English: <code>/setlang en</code>\n\n");
+                    msg_text.push_str("💡 <i>La lingua influisce su tutti i messaggi del bot</i>");
                     bot.send_message(chat_id, msg_text)
                         .parse_mode(ParseMode::Html)
                         .await
@@ -892,14 +878,26 @@ pub async fn handle_message(
                     let parts: Vec<&str> = msg_text.split_whitespace().collect();
                     if parts.len() > 1 {
                         let lang = parts[1];
-                        let mut updated_config = user_config.clone();
-                        updated_config.language = lang.to_string();
-                        db.save_user_config(&updated_config).await.ok();
-                        let tr_new = i18n::get_translations(lang);
-                        bot.send_message(chat_id, tr_new.s_language_updated)
+                        if lang == "it" || lang == "en" {
+                            let mut updated_config = user_config.clone();
+                            updated_config.language = lang.to_string();
+                            db.save_user_config(&updated_config).await.ok();
+                            let tr_new = i18n::get_translations(lang);
+                            let lang_name = if lang == "it" { "Italiano 🇮🇹" } else { "English 🇬🇧" };
+                            let msg = format!("✅ <b>Lingua cambiata a {}</b>\n\n{}", lang_name, tr_new.s_language_updated);
+                            bot.send_message(chat_id, msg)
+                                .parse_mode(ParseMode::Html)
+                                .await
+                                .ok();
+                        } else {
+                            bot.send_message(
+                                chat_id,
+                                "❌ Lingua non supportata. Usa <code>/setlang it</code> o <code>/setlang en</code>",
+                            )
                             .parse_mode(ParseMode::Html)
                             .await
                             .ok();
+                        }
                     } else {
                         bot.send_message(
                             chat_id,
@@ -909,22 +907,6 @@ pub async fn handle_message(
                         .await
                         .ok();
                     }
-                }
-                "/topusers" => {
-                    let top = db.get_top_users(10).await.unwrap_or_default();
-                    let mut msg_text = String::from("<b>Top utenti per link puliti:</b>\n\n");
-                    for (idx, (uid, count)) in top.iter().enumerate() {
-                        msg_text.push_str(&format!(
-                            "{}. <code>{}</code> — <b>{}</b>\n",
-                            idx + 1,
-                            uid,
-                            count
-                        ));
-                    }
-                    bot.send_message(chat_id, msg_text)
-                        .parse_mode(ParseMode::Html)
-                        .await
-                        .ok();
                 }
                 "/toplinks" => {
                     let top = db.get_top_links(10).await.unwrap_or_default();
@@ -1358,6 +1340,18 @@ pub async fn handle_message(
         return Err(e);
     }
 
+    // Check for alternative frontends for popular services
+    for (_, cleaned_url, _) in &cleaned_urls {
+        if let Ok(Some(hit)) = redirect_service.lookup(cleaned_url).await {
+            let frontend_msg = format_hit_html(&hit, 3);
+            let _ = bot
+                .send_message(chat_id, frontend_msg)
+                .parse_mode(ParseMode::Html)
+                .await;
+            break; // Only send one frontend message per batch of URLs
+        }
+    }
+
     Ok(())
 }
 
@@ -1473,12 +1467,10 @@ pub async fn check_url_virustotal(url: &str) -> Option<String> {
 
     let mut lookup_id = encoded_url.clone();
 
-    let mut resp = match client
-        .get(&endpoint)
-        .header("x-apikey", &api_key)
-        .send()
-        .await
-    {
+    let mut resp = match retry_http_request(
+        || client.get(&endpoint).header("x-apikey", &api_key),
+        "VirusTotal lookup"
+    ).await {
         Ok(response) => response,
         Err(e) => {
             tracing::warn!(error = %e, url = %url, "VirusTotal: richiesta fallita");
@@ -1486,7 +1478,7 @@ pub async fn check_url_virustotal(url: &str) -> Option<String> {
                 return None;
             }
             return Some(
-                "⚠️ <b>VirusTotal non raggiungibile</b>\nRiprova tra qualche minuto.".to_string(),
+                "⚠️ <b>VirusTotal</b>\nImpossibile raggiungere il servizio. Riprova tra qualche minuto.".to_string(),
             );
         }
     };
@@ -1495,13 +1487,12 @@ pub async fn check_url_virustotal(url: &str) -> Option<String> {
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         tracing::info!(url = %url, "VirusTotal: URL non presente, invio per analisi");
 
-        let submit_resp = match client
-            .post("https://www.virustotal.com/api/v3/urls")
-            .header("x-apikey", &api_key)
-            .form(&[("url", url)])
-            .send()
-            .await
-        {
+        let submit_resp = match retry_http_request(
+            || client.post("https://www.virustotal.com/api/v3/urls")
+                .header("x-apikey", &api_key)
+                .form(&[("url", url)]),
+            "VirusTotal submit"
+        ).await {
             Ok(response) => response,
             Err(e) => {
                 tracing::warn!(error = %e, url = %url, "VirusTotal: submit fallito");
@@ -1744,13 +1735,12 @@ async fn search_existing_urlscan(url: &str, api_key: &str) -> Option<String> {
     // URLScan Search API: search for the exact URL using query parameter
     let search_query = format!("domain:{}", url.split('/').nth(2).unwrap_or(url));
 
-    let search_resp = match client
-        .get("https://urlscan.io/api/v1/search/")
-        .header("API-Key", api_key)
-        .query(&[("q", search_query.as_str())])
-        .send()
-        .await
-    {
+    let search_resp = match retry_http_request(
+        || client.get("https://urlscan.io/api/v1/search/")
+            .header("API-Key", api_key)
+            .query(&[("q", search_query.as_str())]),
+        "URLScan search"
+    ).await {
         Ok(response) => response,
         Err(_) => return None,
     };
@@ -1815,13 +1805,12 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
 
     // If not found, submit a new scan
     if uuid.is_none() {
-        let submit_resp = match client
-            .post("https://urlscan.io/api/v1/scan/")
-            .header("API-Key", &api_key)
-            .json(&serde_json::json!({ "url": url, "visibility": "private" }))
-            .send()
-            .await
-        {
+        let submit_resp = match retry_http_request(
+            || client.post("https://urlscan.io/api/v1/scan/")
+                .header("API-Key", &api_key)
+                .json(&serde_json::json!({ "url": url, "visibility": "private" })),
+            "URLScan submit"
+        ).await {
             Ok(response) => response,
             Err(e) => {
                 tracing::warn!(error = %e, url = %url, "URLScan.io: richiesta fallita");
@@ -2469,16 +2458,24 @@ async fn handle_user_settings_callback(
         db.get_user_config(user_id).await.unwrap_or_default();
 
     let (message_text, keyboard) = match setting_type {
-        "notifications" => (
-            format!("<b>{}</b>\n\n{}", tr.s_notif_title, tr.s_notif_desc),
-            InlineKeyboardMarkup::new(vec![
+        "notifications" => {
+            let current_status = if user_config.is_enabled() {
+                tr.s_notif_enabled
+            } else {
+                tr.s_notif_disabled
+            };
+            let message = format!(
+                "<b>{}</b>\n\n{} <b>{}</b>\n\n{}",
+                tr.s_notif_title, tr.s_notif_current_status, current_status, tr.s_notif_desc
+            );
+            let keyboard = InlineKeyboardMarkup::new(vec![
                 vec![
                     InlineKeyboardButton::callback(
-                        tr.s_enabled,
+                        format!("✅ {}", tr.s_enabled),
                         format!("user_setting:toggle:notif:1:{}", user_id),
                     ),
                     InlineKeyboardButton::callback(
-                        tr.s_disabled,
+                        format!("❌ {}", tr.s_disabled),
                         format!("user_setting:toggle:notif:0:{}", user_id),
                     ),
                 ],
@@ -2486,8 +2483,9 @@ async fn handle_user_settings_callback(
                     tr.s_back,
                     format!("settings:{}", user_id),
                 )],
-            ]),
-        ),
+            ]);
+            (message, keyboard)
+        }
         "ai" => {
             let ai_status = if user_config.is_ai_enabled() {
                 tr.s_ai_status_enabled
@@ -2498,9 +2496,14 @@ async fn handle_user_settings_callback(
                 "<b>{}</b>\n\n{} <b>{}</b>\n\n{}",
                 tr.s_ai_title, tr.s_ai_current_status, ai_status, tr.s_ai_desc
             );
+            let toggle_text = if user_config.is_ai_enabled() {
+                format!("🔴 {}", tr.s_disabled)
+            } else {
+                format!("🟢 {}", tr.s_enabled)
+            };
             let keyboard = InlineKeyboardMarkup::new(vec![
                 vec![InlineKeyboardButton::callback(
-                    tr.s_toggle_ai,
+                    toggle_text,
                     format!("user_setting:toggle:ai:{}", user_id),
                 )],
                 vec![InlineKeyboardButton::callback(
@@ -2563,20 +2566,30 @@ async fn handle_user_settings_callback(
             let language = parts[2];
             let mut updated = user_config.clone();
             let mut ok = true;
+            let new_translations = if language == "it" || language == "en" {
+                crate::i18n::get_translations(language)
+            } else {
+                tr.clone()
+            };
+            let new_tr = &new_translations;
+
             if language == "it" || language == "en" {
                 updated.language = language.to_string();
                 if let Err(e) = db.save_user_config(&updated).await {
                     tracing::error!(error = %e, user_id, "Errore nel salvataggio lingua");
                     ok = false;
                 }
+            } else {
+                ok = false;
             }
 
             let text = if ok {
-                format!("{}: <b>{}</b>", tr.s_language_updated, updated.language)
+                let lang_name = if language == "it" { "Italiano 🇮🇹" } else { "English 🇬🇧" };
+                format!("✅ <b>Lingua cambiata a {}</b>", lang_name)
             } else {
                 tr.s_setting_update_failed.to_string()
             };
-            let keyboard = settings_back_keyboard(tr, user_id);
+            let keyboard = settings_back_keyboard(new_tr, user_id);
             (text, keyboard)
         }
         "stats" => {
@@ -3155,6 +3168,7 @@ fn extract_domain(url: &str) -> Result<String, Box<dyn std::error::Error>> {
 ///
 /// Kept as a free function (rather than inlined in the command match arm) so
 /// it can be unit-tested against a [`RedirectService`] backed by stub data.
+#[allow(dead_code)]
 async fn build_redirect_reply(
     svc: &RedirectService,
     arg: &str,

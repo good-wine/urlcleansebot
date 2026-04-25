@@ -15,6 +15,7 @@ use url::Url;
 
 use super::cache::{SingleEntryCache, DEFAULT_TTL};
 use super::models::{FarsideService, Frontend, FrontendSource, LibRedirectDoc, LookupHit};
+use crate::http_utils::retry_http_request;
 
 pub const LIBREDIRECT_URL: &str =
     "https://raw.githubusercontent.com/libredirect/instances/main/data.json";
@@ -54,6 +55,11 @@ impl RedirectService {
     /// Build a service with the production upstream URLs and the default TTL.
     pub fn new() -> Result<Self> {
         Self::with_urls(LIBREDIRECT_URL, FARSIDE_URL, DEFAULT_TTL)
+    }
+
+    /// Build a service with URLs from configuration.
+    pub fn from_config(libredirect_url: &str, farside_url: &str) -> Result<Self> {
+        Self::with_urls(libredirect_url, farside_url, DEFAULT_TTL)
     }
 
     /// Build a service overriding upstream URLs and TTL — used in tests
@@ -131,7 +137,10 @@ impl RedirectService {
         self.inner
             .libredirect
             .get_or_try_insert_with(|| async move {
-                let resp = http.get(&url).send().await.context("GET libredirect")?;
+                let resp = retry_http_request(
+                    || http.get(&url),
+                    "fetch libredirect catalogue"
+                ).await.context("GET libredirect")?;
                 let status = resp.status();
                 if !status.is_success() {
                     return Err(anyhow!("libredirect HTTP {status}"));
@@ -148,7 +157,10 @@ impl RedirectService {
         self.inner
             .farside
             .get_or_try_insert_with(|| async move {
-                let resp = http.get(&url).send().await.context("GET farside")?;
+                let resp = retry_http_request(
+                    || http.get(&url),
+                    "fetch farside catalogue"
+                ).await.context("GET farside")?;
                 let status = resp.status();
                 if !status.is_success() {
                     return Err(anyhow!("farside HTTP {status}"));

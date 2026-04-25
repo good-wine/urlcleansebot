@@ -1,53 +1,157 @@
-# Riepilogo Implementazione Completa
+# 🚀 Guida Rapida - ClearURLs Telegram Bot
 
-## ✅ Tutte le Feature Implementate
+Una guida passo-passo per configurare e avviare il tuo bot ClearURLs in pochi minuti.
 
-### 1. **Markdown Linting** ✅
+## 📋 Prerequisiti
 
-- **Errori Risolti**: 231 → ~10 (solo preferenze di stile)
-- **File Modificati**: `docs/URLSCAN.md`, `docs/SCAN_CACHING.md`, configurazione `.markdownlint.json`
-- **Benefici**: Documentazione consistente e professionale
+### Sistema
+- **Rust 1.92+** (scaricalo da [rustup.rs](https://rustup.rs/))
+- **Podman** (consigliato) o Docker
+- **Git** per clonare il repository
 
-### 2. **Test Automatizzati** ✅
+### Account Telegram
+1. Contatta [@BotFather](https://t.me/botfather) su Telegram
+2. Crea un nuovo bot con `/newbot`
+3. Salva il **token del bot** (formato: `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`)
 
-- **Directory**: `tests/`
-- **File Creati**:
-  - `tests/common/mod.rs` - Utilities e fixtures condivisi
-  - `tests/sanitizer_tests.rs` - Test per URL sanitization (7 test)
-  - `tests/database_tests.rs` - Test operazioni database (9 test)
-  - `tests/bot_commands_tests.rs` - Test comandi bot (7 test) 
+## ⚡ Installazione Rapida (5 minuti)
 
-- **Copertura**: 30+ test cases
-- **Comando**: `cargo test --release --all-features`
+### 1. Clona e configura
+```bash
+git clone https://github.com/good-wine/clearurlsbot.git
+cd clearurlsbot
+cp .env.example .env
+```
 
-### 3. **CI/CD con GitHub Actions** ✅
+### 2. Configura le variabili essenziali
+Modifica `.env` con i tuoi valori:
 
-- **File**: `.github/workflows/ci.yml`
-- **Jobs**:
-  - ✅ Check compilazione
-  - ✅ Test suite completa
-  - ✅ Formatting (rustfmt)
-  - ✅ Linting (clippy)
-  - ✅ Markdown linting
-  - ✅ Security audit
-  - ✅ Build container image
-  - ✅ Push to GitHub Container Registry
+```bash
+# Obbligatorio
+TELOXIDE_TOKEN=il_tuo_token_bot_telegram
+BOT_USERNAME=@il_tuo_bot_username
+ADMIN_ID=il_tuo_user_id_telegram
 
-### 4. **Rate Limiting** ✅
+# Opzionale ma raccomandato
+COOKIE_KEY=genera_una_stringa_random_di_32_caratteri
+```
 
-- **File**: `src/db/implementation.rs`
-- **Tabella**: `rate_limits`
-- **Metodi**:
-  - `check_rate_limit(user_id, max_actions, window_seconds)`
-  - `get_rate_limit_status(user_id)`
-  - `reset_rate_limit(user_id)` (admin)
+### 3. Avvia il bot
+```bash
+# Sviluppo (con auto-ricarica)
+cargo run
 
-- **Protezione**: Previene abuso dei comandi `/export` e `/history`
-- **Configurabile**: Limite azioni e finestra temporale personalizzabili
+# Produzione (ottimizzato)
+cargo run --release
+```
 
-### 5. **Feature Flags** ✅
+### 4. Test del bot
+1. Apri Telegram e cerca il tuo bot
+2. Invia `/start` per inizializzare
+3. Invia un URL con tracking: `https://example.com?utm_source=test&fbclid=123`
+4. Il bot dovrebbe rispondere con l'URL pulito!
 
-- **File**: `src/db/implementation.rs`
+## 🔧 Configurazione Avanzata
+
+### Sicurezza (Raccomandato)
+```bash
+# VirusTotal per controllo malware
+VIRUSTOTAL_API_KEY=la_tua_chiave_api
+VIRUSTOTAL_ALERT_ONLY=true
+
+# URLScan.io per analisi comportamentale
+URLSCAN_API_KEY=la_tua_chiave_api
+URLSCAN_ALERT_ONLY=true
+```
+
+### Database
+```bash
+# SQLite (default, facile)
+DATABASE_URL=sqlite:bot.db
+
+# PostgreSQL (produzione)
+DATABASE_URL=postgres://user:password@localhost/clearurls
+```
+
+### Deployment
+```bash
+# Con Podman (raccomandato)
+./podman-deploy.sh start
+
+# Con Docker
+docker build -t clearurls-bot .
+docker run -d --env-file .env clearurls-bot
+```
+
+## 🎯 Test delle Funzionalità
+
+### Comandi Base
+- `/start` - Inizializza il bot
+- `/help` - Mostra tutti i comandi disponibili
+- `/settings` - Menu impostazioni interattivo
+
+### Pulizia URL
+```bash
+# Invia questi URL al bot per testare:
+
+# URL con tracking Google
+https://www.youtube.com/watch?v=dQw4w9WgXcQ&feature=share&utm_source=test
+
+# URL con tracking Facebook
+https://example.com/page?fbclid=1234567890abcdef
+
+# URL con redirect
+https://bit.ly/3abcd123
+```
+
+### Funzionalità Avanzate
+- **Lingua**: `/language` per vedere le opzioni, `/setlang it` per italiano
+- **Statistiche**: `/stats` per statistiche personali
+- **Admin**: Se sei admin, usa `/settings` → pannello admin
+
+## 🔍 Troubleshooting
+
+### Il bot non risponde?
+1. Verifica che `TELOXIDE_TOKEN` sia corretto
+2. Controlla i log del bot per errori
+3. Assicurati che il bot sia online
+
+### Errori di compilazione?
+```bash
+# Aggiorna Rust
+rustup update
+
+# Pulisci e ricompila
+cargo clean && cargo build
+```
+
+### Problemi con Podman/Docker?
+```bash
+# Verifica che Podman sia installato
+podman --version
+
+# Controlla i container attivi
+podman ps
+```
+
+## 📚 Documentazione Completa
+
+- **[README.md](../README.md)** - Documentazione completa
+- **[Deployment Guide](../docs/DEPLOYMENT.md)** - Guide di deployment avanzate
+- **[Contributing](../CONTRIBUTING.md)** - Come contribuire al progetto
+- **[Security](../SECURITY.md)** - Policy di sicurezza
+
+## 🆘 Supporto
+
+- **Issues**: [GitHub Issues](https://github.com/good-wine/clearurlsbot/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/good-wine/clearurlsbot/discussions)
+- **Telegram**: Cerca il bot ufficiale per supporto
+
+---
+
+**Tempo totale di setup**: ~5 minuti ⏱️
+
+**Pronto per iniziare?** Modifica il tuo `.env` e avvia con `cargo run`! 🎉
 - **Tabella**: `feature_flags`
 - **Metodi**:
   - `set_feature_flag(user_id, feature_name, enabled)`
@@ -221,6 +325,36 @@ cargo fmt --check
 cargo audit
 # Output: (verifica dipendenze vulnerabili)
 ```
+
+---
+
+## 👤 Guida Utente - Come Usare il Bot
+
+### Per Iniziare
+1. **Avvia il bot**: Invia `/start` per ricevere il link al dashboard web
+2. **Imposta la lingua**: Usa `/language` per vedere le opzioni, poi `/setlang it` o `/setlang en`
+3. **Configura le impostazioni**: `/settings` per personalizzare il comportamento
+
+### Comandi Principali
+- **🛡️ Pulizia URL**: Invia qualsiasi URL e il bot lo pulisce automaticamente dai tracker
+- **📊 Statistiche**: `/stats` per vedere quante URL hai pulito
+- **📈 Classifiche**: `/leaderboard` per vedere i top utenti
+- **🔍 Cronologia**: `/history` per gli ultimi URL puliti
+
+### Sicurezza Avanzata
+- **🦠 VirusTotal**: Controllo automatico malware (se configurato)
+- **🌐 URLScan.io**: Analisi reputazione web (se configurato)
+- **⚙️ Whitelist**: `/whitelist` per gestire domini fidati
+
+### Gestione Interfaccia
+- **⌨️ Tastiera**: `/menu` mostra la tastiera rapida, `/hidekbd` la nasconde
+- **🌍 Lingua**: `/setlang it` per italiano, `/setlang en` per inglese
+- **📤 Esporta**: `/export` per scaricare i tuoi dati in JSON
+
+### Suggerimenti
+- Il bot risponde automaticamente in italiano o inglese in base alle tue impostazioni
+- Usa `/help` per la lista completa dei comandi
+- Le impostazioni sono salvate per utente e chat
 
 ---
 
