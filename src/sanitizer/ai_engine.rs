@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::http_utils::retry_http_request;
 use anyhow::{anyhow, Result};
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -51,18 +52,19 @@ impl AiEngine {
             url
         );
 
-        let response = self.client.post(format!("{}/chat/completions", self.api_base))
-            .header("Authorization", format!("Bearer {}", api_key))
-            .json(&json!({
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": "You are a specialized tool for cleaning URLs from tracking parameters. Output only the cleaned URL."},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": 0.0
-            }))
-            .send()
-            .await?;
+        let response = retry_http_request(
+            || self.client.post(format!("{}/chat/completions", self.api_base))
+                .header("Authorization", format!("Bearer {}", api_key))
+                .json(&json!({
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": "You are a specialized tool for cleaning URLs from tracking parameters. Output only the cleaned URL."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.0
+                })),
+            "AI URL sanitization"
+        ).await?;
 
         if !response.status().is_success() {
             let err = response.text().await?;

@@ -2,6 +2,71 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### 🔧 Technical Improvements
+
+- **HTTP Resilience**: Implemented retry with exponential backoff for all external API calls
+  - Added `tokio-retry` dependency for robust retry logic
+  - Exponential backoff strategy: starts at 1s, max 30s delay, max 3 attempts
+  - Applied to all HTTP requests: VirusTotal API, URLScan.io API, LibRedirect/Farside catalogues, ClearURLs rules download, AI API calls
+  - Improved bot reliability when external services experience temporary issues
+  - Better error handling and user experience during network problems
+
+- **Configurable External URLs**: Moved hardcoded URLs to configuration
+  - Added `LIBREDIRECT_URL` and `FARSIDE_URL` to config with sensible defaults
+  - URLs are now configurable via environment variables instead of being hardcoded
+  - Maintains backward compatibility with default production URLs
+  - Allows for testing with local mock servers or custom endpoints
+
+## [1.4.1] - 2026-03-05
+
+### ✨ Improvements
+
+- **Enhanced Command User Experience**: Improved `/language` and `/setlang` commands with better feedback
+  - `/language` now shows current language setting
+  - `/setlang` provides clear success/error messages with language names
+  - Better formatting with emojis and HTML markup
+- **Enhanced Settings User Experience**: Improved settings menus with clearer status display and better user feedback
+  - Notifications settings now show current status before allowing changes
+  - AI settings display current state and show appropriate toggle action
+  - Language change confirmation now uses the new language for response messages
+  - Better visual indicators with emojis and clear action buttons
+- **Settings System Improvements**: Enhanced callback handling and error management
+  - More robust error handling for settings updates
+  - Improved user feedback for successful/failed operations
+- **Automatic Alternative Frontends**: Removed manual `/redirect` command and implemented automatic detection
+  - Bot now automatically detects URLs from popular services (YouTube, Twitter, Reddit, etc.)
+  - Automatically suggests privacy-focused alternatives (Invidious, Piped, Nitter, Teddit, etc.)
+  - Frontend suggestions appear automatically after URL cleaning
+  - Uses existing LibRedirect and Farside data sources with 6-hour cache TTL
+  - Better separation of concerns in settings callback processing
+- **Command Cleanup**: Removed duplicate `/topusers` command (functionality merged into `/leaderboard`)
+  - Streamlined command set for better user experience
+  - Updated help text to reflect current command list
+
+### 📚 Documentation Updates
+
+- **README.md**: Added comprehensive "Bot Commands" section with all available commands
+- **QUICK_START.md**: Added user guide section explaining how to use bot features
+- **i18n.rs**: Added new translation keys for improved settings UI
+  - `s_notif_current_status` for displaying current notification status
+  - Updated all language translations (IT, EN, ES, FR, DE)
+- **Command Documentation**: All bot commands now properly documented with descriptions
+
+### 🔧 Technical Improvements
+
+- **Code Quality**: Verified compilation after command and settings improvements
+- **Consistency**: Standardized command response formatting across the bot
+- **Error Handling**: Improved error management in settings callbacks
+
+### ⚠️ Breaking Changes
+
+- **Removed**: `/topusers` command (use `/leaderboard` instead)
+- **Removed**: `/redirect <url>` command (now automatic - frontend alternatives are suggested automatically when URLs from popular services are detected)
+
+---
+
 ## [1.4.0] - 2026-03-04
 
 ### 🚀 New Features

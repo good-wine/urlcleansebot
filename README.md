@@ -37,12 +37,52 @@ A modern, high-performance Rust-based Telegram bot that automatically removes tr
 - **Granular Control**: Per-chat configuration (Reply/Delete modes) and custom tracking parameter removal
 - **AI Deep Scan**: Optional AI-powered sanitization for complex tracking parameters not covered by standard rules
 - **Shortlink Expansion**: Automatically follows redirects from services like bit.ly or tinyurl to uncover and strip underlying trackers
+- **Alternative Frontends**: Automatically detects URLs from popular services (YouTube, Twitter, Reddit, etc.) and suggests privacy-focused alternatives (Invidious, Piped, Nitter, Teddit, etc.)
 - **Deep Auditing**: Track which provider (Amazon, Google, etc.) cleaned each link
 - **Feature Flags System**: 🆕 Gradual rollout and per-user feature control
 - **Rate Limiting**: 🆕 Database-level protection against abuse
 - **Health Monitoring**: 🆕 Built-in health check endpoint for production monitoring
+- **HTTP Resilience**: 🆕 Retry with exponential backoff for all external API calls (VirusTotal, URLScan.io, AI services)
 - **Comprehensive Testing**: 🆕 Full test suite with 30+ test cases
 - **CI/CD Pipeline**: 🆕 Automated testing and deployment via GitHub Actions
+
+## 🤖 Bot Commands
+
+The bot supports the following commands (available in both English and Italian):
+
+### Core Commands
+- `/start` - Initialize the bot and get dashboard link
+- `/help` - Show comprehensive help with all available commands
+- `/menu` - Display quick reply keyboard for easy access
+- `/settings` - Open interactive settings menu
+
+### Statistics & Data
+- `/stats` - View your personal cleaning statistics
+- `/history` - Show last 10 cleaned URLs
+- `/domains` - Statistics grouped by domain
+- `/leaderboard` - Top 10 users by cleaned URLs
+- `/trending` - Most frequently cleaned URLs
+- `/export` - Export your data as JSON
+
+### Security & Management
+- `/whitelist` - Manage whitelisted domains
+- `/whitelist_add <domain>` - Add domain to whitelist
+- `/whitelist_remove <domain>` - Remove domain from whitelist
+- `/limits` - Check your current rate limits
+
+### Language & Interface
+- `/language` - Show current language and available options
+- `/setlang <it|en>` - Change bot language (Italian/English)
+- `/hidekbd` - Hide the reply keyboard
+
+### Administrative (Admin Only)
+
+Admin commands are available through the interactive settings menu (`/settings`):
+
+- **User Management**: View and manage bot users
+- **System Settings**: View system configuration and status
+- **Global Statistics**: Access comprehensive bot usage statistics
+- **Maintenance**: Database maintenance and cleanup operations
 
 ## 🚀 Quick Start
 
@@ -89,6 +129,12 @@ URLSCAN_ALERT_ONLY=true
 
 # Optional: max inline results returned by Telegram inline mode (default: 5)
 INLINE_MAX_RESULTS=5
+
+# Optional: Custom URLs for external services (advanced users)
+# Default URLs are production endpoints, change only if you know what you're doing
+LIBREDIRECT_URL=https://raw.githubusercontent.com/libredirect/instances/main/data.json
+FARSIDE_URL=https://raw.githubusercontent.com/benbusby/farside/refs/heads/main/services-full.json
+CLEARURLS_SOURCE=https://raw.githubusercontent.com/ClearURLs/Rules/refs/heads/master/data.min.json
 ```
 
 ### 2. Run Locally
@@ -146,30 +192,30 @@ podman run -d --name clear_urls_bot --pod clear_urls_bot_pod -p 3000:3000 --env-
 - Caching risultati pulizia: cache interna per URL ripetuti
 - Ottimizzazione DB/async: query asincrone, pooling, batch
 - Webhook HTTPS: supportato nativamente, attivabile con `WEBHOOK_URL` + `WEBHOOK_SECRET`
-- Comando `/redirect <url>`: restituisce frontend alternativi (Invidious, Piped, Nitter, Teddit, …) recuperati da LibRedirect e Farside, con cache TTL 6h
+- Frontend alternativi automatici: rileva automaticamente URL da YouTube, Twitter, Reddit, ecc. e suggerisce alternative privacy-focused (Invidious, Piped, Nitter, Teddit, …) da LibRedirect e Farside, con cache TTL 6h
 
 ## 🛡️ Sicurezza e Best Practice
 
-- Rate limiting anti-flood: massimo 1 richiesta/secondo per utente
-- Validazione e sanificazione input su tutti i messaggi/callback
-- Controllo permessi sistematico per azioni admin
-- Protezione dati sensibili nei log e nelle variabili di ambiente
-- Consigliato eseguire il bot in container rootless (Podman) e usare database PostgreSQL in produzione
-- Backup automatico DB: script backup_db.sh, cron consigliato
-- Logging avanzato: solo admin riceve log critici via Telegram
-- Notifiche automatiche errori: messaggio all’admin in caso di panic/errori
-- Caching risultati pulizia: cache interna per URL ripetuti
-- Ottimizzazione DB/async: query asincrone, pooling, batch
-- Webhook HTTPS: supportato nativamente, attivabile con `WEBHOOK_URL` + `WEBHOOK_SECRET`
-- Integrazione VirusTotal: controllo link sospetti, avviso all’utente
+### Sicurezza
+- **Rate Limiting**: Anti-flood protection (max 1 request/second per user)
+- **Input Validation**: Sanitization of all messages and callbacks
+- **Permission Control**: Systematic admin permission checks
+- **Data Protection**: Sensitive data protection in logs and environment variables
+- **Container Security**: Recommended rootless Podman execution with PostgreSQL in production
 
-## 🔒 Sicurezza
+### Performance & Reliability
+- **Database Optimization**: Asynchronous queries, connection pooling, batch operations
+- **Caching**: Internal cache for repeated URL cleaning results
+- **Automatic Backup**: Database backup script (`backup_db.sh`) with cron scheduling
+- **Webhook Support**: Native HTTPS webhook support with `WEBHOOK_URL` + `WEBHOOK_SECRET`
+- **HTTP Resilience**: Retry with exponential backoff for all external API calls
+- **Alternative Frontends**: Automatic detection of URLs from YouTube, Twitter, Reddit, etc. with privacy-focused alternatives (Invidious, Piped, Nitter, Teddit, ...) from LibRedirect and Farside with 6h TTL cache
 
-- Rate limiting anti-flood: massimo 1 richiesta/secondo per utente
-- Validazione e sanificazione input su tutti i messaggi/callback
-- Controllo permessi sistematico per azioni admin
-- Protezione dati sensibili nei log e nelle variabili di ambiente
-- Consigliato eseguire il bot in container rootless (Podman) e usare database PostgreSQL in produzione
+### Monitoring & Administration
+- **Advanced Logging**: Critical logs sent only to admin via Telegram
+- **Error Notifications**: Automatic admin messages for panics/errors
+- **Health Monitoring**: Built-in health check endpoint for production monitoring
+- **Admin Panel**: Interactive admin interface for user management, system settings, and maintenance
 
 ## 🏗️ Technical Architecture
 
