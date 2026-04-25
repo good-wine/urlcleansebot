@@ -41,19 +41,14 @@ impl RateLimiter {
 }
 
 /// Global rate limiter instance (1 request/sec per user)
-pub static RATE_LIMITER: Lazy<RateLimiter> =
-    Lazy::new(|| RateLimiter::new(Duration::from_secs(1)));
+pub static RATE_LIMITER: Lazy<RateLimiter> = Lazy::new(|| RateLimiter::new(Duration::from_secs(1)));
 
 /// Sanitise arbitrary user-supplied text (inline queries, command arguments,
 /// etc.).  Strips control characters and enforces a length cap.  This
 /// intentionally does **not** validate URL format — use
 /// [`sanitizer::validation::is_valid_url`] separately when a URL is required.
 pub fn sanitize_input(input: &str) -> String {
-    let mut s: String = input
-        .trim()
-        .chars()
-        .filter(|c| !c.is_control())
-        .collect();
+    let mut s: String = input.trim().chars().filter(|c| !c.is_control()).collect();
     if s.len() > 4_000 {
         // Truncate at a character boundary.
         s = s.chars().take(4_000).collect();
@@ -63,11 +58,7 @@ pub fn sanitize_input(input: &str) -> String {
 
 /// Sanitise callback query data (not a URL — just safe ASCII trimming).
 pub fn sanitize_callback(input: &str) -> String {
-    let mut s: String = input
-        .trim()
-        .chars()
-        .filter(|c| !c.is_control())
-        .collect();
+    let mut s: String = input.trim().chars().filter(|c| !c.is_control()).collect();
     if s.len() > 4_000 {
         s = s.chars().take(4_000).collect();
     }
