@@ -13,20 +13,20 @@ static SENSITIVE_PATTERNS: LazyLock<HashMap<&'static str, Regex>> = LazyLock::ne
     // Use \b (word boundary) instead of look-arounds
     m.insert(
         "aws_access_key",
-        Regex::new(r"(?i)\b[A-Z0-9]{20}\b").unwrap(),
+        Regex::new(r"(?i)\b[A-Z0-9]{20}\b").expect("Invalid regex for aws_access_key"),
     );
     m.insert(
         "aws_secret_key",
-        Regex::new(r"(?i)\b[A-Za-z0-9/+=]{40}\b").unwrap(),
+        Regex::new(r"(?i)\b[A-Za-z0-9/+=]{40}\b").expect("Invalid regex for aws_secret_key"),
     );
     m.insert(
         "password",
-        Regex::new(r"(?i)password\s*[:=]\s*[^\s]+").unwrap(),
+        Regex::new(r"(?i)password\s*[:=]\s*[^\s]+").expect("Invalid regex for password"),
     );
-    m.insert("ipv4", Regex::new(r"(?:\d{1,3}\.){3}\d{1,3}").unwrap());
+    m.insert("ipv4", Regex::new(r"(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)").expect("Invalid regex for ipv4"));
     m.insert(
         "email",
-        Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap(),
+        Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").expect("Invalid regex for email"),
     );
     m
 });
@@ -543,7 +543,13 @@ mod tests {
 
         // Mock a generic provider
         {
-            let mut w = engine.providers.write().unwrap();
+            let mut w = match engine.providers.write() {
+                Ok(w) => w,
+                Err(poisoned) => {
+                    log::error!("RuleEngine providers RwLock poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
             w.push(CompiledProvider {
                 name: "generic".to_string(),
                 url_pattern: Regex::new(".*").unwrap(),

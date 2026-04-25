@@ -63,12 +63,12 @@ impl Config {
 
         let admin_id = env::var("ADMIN_ID")
             .unwrap_or_else(|_| {
-                log::error!("BOT_USERNAME non trovato, uso '0'.");
+                log::error!("ADMIN_ID non trovato, uso '0'.");
                 "0".to_string()
             })
             .parse()
             .unwrap_or_else(|_| {
-                log::error!("INLINE_MAX_RESULTS non trovato, uso 0.");
+                log::error!("ADMIN_ID non valido, uso 0.");
                 0
             });
 
