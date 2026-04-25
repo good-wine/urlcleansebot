@@ -543,7 +543,7 @@ mod tests {
 
         // Mock a generic provider
         {
-            let w = match engine.providers.write() {
+            let mut w = match engine.providers.write() {
                 Ok(w) => w,
                 Err(poisoned) => {
                     log::error!("RuleEngine providers RwLock poisoned, recovering");

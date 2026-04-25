@@ -163,7 +163,7 @@ impl RedirectService {
 /// Extract the lowercased host (without `www.`) from a URL or bare host.
 ///
 /// Accepts both `https://youtube.com/watch?v=...` and `youtube.com/watch?...`.
-pub(crate) fn extract_host(input: &str) -> Result<String> {
+pub fn extract_host(input: &str) -> Result<String> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return Err(anyhow!("empty URL"));
@@ -178,6 +178,7 @@ pub(crate) fn extract_host(input: &str) -> Result<String> {
     let host = parsed
         .host_str()
         .ok_or_else(|| anyhow!("URL has no host"))?
+        .trim_end_matches('.')
         .trim_start_matches("www.")
         .to_ascii_lowercase();
     Ok(host)
@@ -190,10 +191,10 @@ pub(crate) fn find_libredirect_match(
     host: &str,
 ) -> Option<(String, Vec<Frontend>)> {
     for (service, def) in doc.iter() {
-        let matched = def
-            .targets
-            .iter()
-            .any(|t| host == t.as_str() || host.ends_with(&format!(".{t}")));
+        let matched = def.targets.iter().any(|t| {
+            let target = t.to_ascii_lowercase();
+            host == target || host.ends_with(&format!(".{target}"))
+        });
         if !matched {
             continue;
         }
@@ -315,6 +316,11 @@ mod tests {
     #[test]
     fn extract_host_rejects_non_url() {
         assert!(extract_host("not a url with spaces!").is_err());
+    }
+
+    #[test]
+    fn extract_host_trims_trailing_dot() {
+        assert_eq!(extract_host("https://www.youtube.com./watch").unwrap(), "youtube.com");
     }
 
     #[test]

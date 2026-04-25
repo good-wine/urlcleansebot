@@ -3168,6 +3168,13 @@ async fn build_redirect_reply(
             "ℹ️ Usage: <code>/redirect &lt;url&gt;</code>\nExample: <code>/redirect youtube.com</code>".into()
         };
     }
+    if crate::redirects::extract_host(arg).is_err() {
+        return if is_it {
+            "⚠️ URL non valido. Usa <code>/redirect &lt;url&gt;</code> con un dominio valido.".into()
+        } else {
+            "⚠️ Invalid URL. Use <code>/redirect &lt;url&gt;</code> with a valid domain.".into()
+        };
+    }
     match svc.lookup(arg).await {
         Ok(Some(hit)) => format_hit_html(&hit, 5),
         Ok(None) => {
@@ -3198,8 +3205,8 @@ async fn build_redirect_reply(
 mod tests {
     use super::{
         admin_global_stats_message, admin_maintenance_message, admin_system_message,
-        admin_users_message, callback_target_user_id, is_message_not_modified_error,
-        removed_query_params_count,
+        admin_users_message, callback_target_user_id,
+        is_message_not_modified_error, removed_query_params_count,
     };
     use crate::i18n;
 
@@ -3276,6 +3283,19 @@ mod tests {
         let message = admin_maintenance_message(&tr);
         assert!(message.contains(tr.s_maintenance));
         assert!(message.contains(tr.s_admin_maintenance_none));
+    }
+
+    #[test]
+    fn build_redirect_reply_invalid_url_returns_error_message() {
+        let svc = crate::redirects::RedirectService::with_urls(
+            "http://x.invalid",
+            "http://x.invalid",
+            std::time::Duration::from_secs(60),
+        )
+        .unwrap();
+        let tr = i18n::get_translations("en");
+        let out = futures::executor::block_on(super::build_redirect_reply(&svc, "not a url", &tr));
+        assert!(out.contains("Invalid URL") || out.contains("URL non valido"));
     }
 
     #[test]
