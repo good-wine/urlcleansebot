@@ -27,6 +27,6 @@ pub struct CleanUrlResult {
 
 /// Command handler for URL cleaning.
 #[async_trait]
-pub trait CleanUrlCommandHandler {
+pub trait CleanUrlCommandHandler: Send + Sync {
     async fn handle(&self, command: CleanUrlCommand) -> Result<CleanUrlResult>;
 }

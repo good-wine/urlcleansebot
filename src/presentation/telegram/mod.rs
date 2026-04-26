@@ -3,7 +3,9 @@
 use crate::application::commands::handlers::*;
 use crate::application::queries::*;
 use crate::application::services::*;
-use crate::shared::security::*;use teloxide::prelude::*;
+use crate::shared::error::AppResult;
+use crate::shared::security::*;
+use teloxide::prelude::*;
 use teloxide::types::Message;
 use std::sync::Arc;
 
@@ -46,7 +48,7 @@ pub async fn handle_url_cleaning(
     bot: Bot,
     msg: Message,
     services: AppServices,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> AppResult<()> {
     if let Some(text) = msg.text() {
         let user_id = msg.chat.id.0;
 
@@ -103,7 +105,7 @@ pub async fn handle_start(
     bot: Bot,
     msg: Message,
     _services: AppServices,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> AppResult<()> {
     let welcome_text = "👋 Benvenuto nel ClearURLs Bot!\n\n\
         Invia un URL da pulire e io rimuoverò tutti i parametri di tracciamento.\n\n\
         Comandi disponibili:\n\
@@ -120,7 +122,7 @@ pub async fn handle_stats(
     bot: Bot,
     msg: Message,
     services: AppServices,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> AppResult<()> {
     let user_id = msg.chat.id.0;
 
     // Validate user ID
@@ -154,7 +156,7 @@ pub async fn handle_whitelist(
     bot: Bot,
     msg: Message,
     services: AppServices,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> AppResult<()> {
     let user_id = msg.chat.id.0;
 
     // Validate user ID
@@ -190,7 +192,7 @@ pub async fn handle_settings(
     bot: Bot,
     msg: Message,
     services: AppServices,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> AppResult<()> {
     let user_id = msg.chat.id.0;
 
     // Validate user ID

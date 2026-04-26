@@ -4,7 +4,6 @@ use clear_urls_bot::{
     application::{
         commands::handlers::*,
         queries::handlers::*,
-        services::*,
     },
     domain::repositories::*,
     infrastructure::repositories::*,
@@ -16,7 +15,7 @@ use clear_urls_bot::{
 use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::Bot;
-use dptree;
+use teloxide::macros::BotCommands;
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
@@ -35,25 +34,19 @@ async fn main() -> AppResult<()> {
     let whitelist_repo = Arc::new(PostgresWhitelistRepository::new(pool.clone()));
     let statistics_repo = Arc::new(PostgresStatisticsRepository::new(pool.clone()));
 
-    // Initialize application services
-    let clean_url_service = CleanUrlApplicationService::new(
-        url_history_repo.clone(),
-        whitelist_repo.clone(),
-    );
-
     // Initialize command handlers
     let clean_url_handler = Arc::new(CleanUrlCommandHandlerImpl::new(
-        url_history_repo.clone(),
-        whitelist_repo.clone(),
+        url_history_repo.clone() as Arc<dyn UrlHistoryRepository>,
+        whitelist_repo.clone() as Arc<dyn WhitelistRepository>,
     ));
-    let update_user_prefs_handler = Arc::new(UpdateUserPreferencesCommandHandlerImpl::new(user_repo.clone()));
-    let update_user_lang_handler = Arc::new(UpdateUserLanguageCommandHandlerImpl::new(user_repo.clone()));
-    let manage_whitelist_handler = Arc::new(ManageWhitelistCommandHandlerImpl::new(whitelist_repo.clone()));
+    let update_user_prefs_handler = Arc::new(UpdateUserPreferencesCommandHandlerImpl::new(user_repo.clone() as Arc<dyn UserRepository>));
+    let update_user_lang_handler = Arc::new(UpdateUserLanguageCommandHandlerImpl::new(user_repo.clone() as Arc<dyn UserRepository>));
+    let manage_whitelist_handler = Arc::new(ManageWhitelistCommandHandlerImpl::new(whitelist_repo.clone() as Arc<dyn WhitelistRepository>));
 
     // Initialize query handlers
-    let get_user_profile_handler = Arc::new(GetUserProfileQueryHandlerImpl::new(user_repo.clone()));
-    let get_global_stats_handler = Arc::new(GetGlobalStatisticsQueryHandlerImpl::new(statistics_repo.clone()));
-    let get_whitelist_handler = Arc::new(GetWhitelistQueryHandlerImpl::new(whitelist_repo.clone()));
+    let get_user_profile_handler = Arc::new(GetUserProfileQueryHandlerImpl::new(user_repo.clone() as Arc<dyn UserRepository>));
+    let get_global_stats_handler = Arc::new(GetGlobalStatisticsQueryHandlerImpl::new(statistics_repo.clone() as Arc<dyn StatisticsRepository>));
+    let get_whitelist_handler = Arc::new(GetWhitelistQueryHandlerImpl::new(whitelist_repo.clone() as Arc<dyn WhitelistRepository>));
 
     // Create application services container
     let app_services = AppServices::new(
@@ -73,7 +66,7 @@ async fn main() -> AppResult<()> {
     let handler = dptree::entry()
         .branch(
             Update::filter_message()
-                .filter_command::<BotCommand>()
+                .filter_command::<ClearUrlsBotCommand>()
                 .endpoint(handle_commands),
         )
         .branch(
@@ -94,15 +87,11 @@ async fn main() -> AppResult<()> {
 
 /// Bot commands enum.
 #[derive(BotCommands, Clone)]
-#[command(rename_rule = "lowercase", description = "Comandi disponibili:")]
-enum BotCommand {
-    #[command(description = "mostra questo messaggio")]
+#[command(rename_rule = "lowercase")]
+pub enum ClearUrlsBotCommand {
     Start,
-    #[command(description = "statistiche globali")]
     Stats,
-    #[command(description = "gestisci whitelist")]
     Whitelist,
-    #[command(description = "impostazioni personali")]
     Settings,
 }
 
@@ -110,45 +99,15 @@ enum BotCommand {
 async fn handle_commands(
     bot: Bot,
     msg: Message,
-    cmd: BotCommand,
+    cmd: ClearUrlsBotCommand,
     services: AppServices,
 ) -> AppResult<()> {
     match cmd {
-        BotCommand::Start => handle_start(bot, msg, services).await?,
-        BotCommand::Stats => handle_stats(bot, msg, services).await?,
-        BotCommand::Whitelist => handle_whitelist(bot, msg, services).await?,
-        BotCommand::Settings => handle_settings(bot, msg, services).await?,
+        ClearUrlsBotCommand::Start => handle_start(bot, msg, services).await?,
+        ClearUrlsBotCommand::Stats => handle_stats(bot, msg, services).await?,
+        ClearUrlsBotCommand::Whitelist => handle_whitelist(bot, msg, services).await?,
+        ClearUrlsBotCommand::Settings => handle_settings(bot, msg, services).await?,
     }
 
     Ok(())
-}
-    tracing::info!("Shutdown completato");
-    Ok(())
-}
-
-fn log_optional_feature(feature: &str, key_var: &str, alert_only_var: &str) {
-    let configured = std::env::var(key_var)
-        .map(|v| !v.is_empty() && !v.contains("your_"))
-        .unwrap_or(false);
-
-    if !configured {
-        tracing::info!("⚠️  {feature}: DISABILITATO (API key non configurata)");
-        return;
-    }
-
-    let alert_only = std::env::var(alert_only_var)
-        .ok()
-        .map(|v| {
-            !matches!(
-                v.trim().to_ascii_lowercase().as_str(),
-                "0" | "false" | "no" | "off"
-            )
-        })
-        .unwrap_or(true);
-
-    if alert_only {
-        tracing::info!("✅ {feature}: ABILITATO (modalità SOLO ALLERTA)");
-    } else {
-        tracing::info!("✅ {feature}: ABILITATO (modalità report completa)");
-    }
 }

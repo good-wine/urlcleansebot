@@ -16,6 +16,9 @@ pub enum AppError {
     #[error("Telegram bot error: {0}")]
     Telegram(#[from] teloxide::RequestError),
 
+    #[error("Configuration error: {0}")]
+    Config(String),
+
     #[error("Validation error: {0}")]
     Validation(String),
 
@@ -28,8 +31,20 @@ pub enum AppError {
     #[error("Rate limit exceeded")]
     RateLimitExceeded,
 
+    #[error("Security error: {0}")]
+    Security(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+impl From<crate::shared::security::SecurityError> for AppError {
+    fn from(error: crate::shared::security::SecurityError) -> Self {
+        match error {
+            crate::shared::security::SecurityError::RateLimitExceeded => AppError::RateLimitExceeded,
+            _ => AppError::Security(error.to_string()),
+        }
+    }
+}

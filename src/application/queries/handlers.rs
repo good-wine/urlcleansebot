@@ -5,56 +5,57 @@ use crate::domain::entities::*;
 use crate::domain::repositories::*;
 use async_trait::async_trait;
 use anyhow::Result;
+use std::sync::Arc;
 
 /// Handler for getting user profile.
-pub struct GetUserProfileQueryHandlerImpl<R: UserRepository> {
-    user_repository: R,
+pub struct GetUserProfileQueryHandlerImpl {
+    user_repository: Arc<dyn UserRepository>,
 }
 
-impl<R: UserRepository> GetUserProfileQueryHandlerImpl<R> {
-    pub fn new(user_repository: R) -> Self {
+impl GetUserProfileQueryHandlerImpl {
+    pub fn new(user_repository: Arc<dyn UserRepository>) -> Self {
         Self { user_repository }
     }
 }
 
 #[async_trait]
-impl<R: UserRepository + Sync> GetUserProfileQueryHandler for GetUserProfileQueryHandlerImpl<R> {
+impl GetUserProfileQueryHandler for GetUserProfileQueryHandlerImpl {
     async fn handle(&self, query: GetUserProfileQuery) -> Result<User> {
         self.user_repository.get_user(query.user_id).await
     }
 }
 
 /// Handler for getting global statistics.
-pub struct GetGlobalStatisticsQueryHandlerImpl<S: StatisticsRepository> {
-    statistics_repository: S,
+pub struct GetGlobalStatisticsQueryHandlerImpl {
+    statistics_repository: Arc<dyn StatisticsRepository>,
 }
 
-impl<S: StatisticsRepository> GetGlobalStatisticsQueryHandlerImpl<S> {
-    pub fn new(statistics_repository: S) -> Self {
+impl GetGlobalStatisticsQueryHandlerImpl {
+    pub fn new(statistics_repository: Arc<dyn StatisticsRepository>) -> Self {
         Self { statistics_repository }
     }
 }
 
 #[async_trait]
-impl<S: StatisticsRepository + Sync> GetGlobalStatisticsQueryHandler for GetGlobalStatisticsQueryHandlerImpl<S> {
+impl GetGlobalStatisticsQueryHandler for GetGlobalStatisticsQueryHandlerImpl {
     async fn handle(&self, _query: GetGlobalStatisticsQuery) -> Result<GlobalStatistics> {
         self.statistics_repository.get_global_statistics().await
     }
 }
 
 /// Handler for getting whitelist.
-pub struct GetWhitelistQueryHandlerImpl<W: WhitelistRepository> {
-    whitelist_repository: W,
+pub struct GetWhitelistQueryHandlerImpl {
+    whitelist_repository: Arc<dyn WhitelistRepository>,
 }
 
-impl<W: WhitelistRepository> GetWhitelistQueryHandlerImpl<W> {
-    pub fn new(whitelist_repository: W) -> Self {
+impl GetWhitelistQueryHandlerImpl {
+    pub fn new(whitelist_repository: Arc<dyn WhitelistRepository>) -> Self {
         Self { whitelist_repository }
     }
 }
 
 #[async_trait]
-impl<W: WhitelistRepository + Sync> GetWhitelistQueryHandler for GetWhitelistQueryHandlerImpl<W> {
+impl GetWhitelistQueryHandler for GetWhitelistQueryHandlerImpl {
     async fn handle(&self, _query: GetWhitelistQuery) -> Result<Vec<String>> {
         self.whitelist_repository.get_whitelist().await
     }

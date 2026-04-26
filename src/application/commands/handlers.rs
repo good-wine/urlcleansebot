@@ -5,6 +5,7 @@ use crate::domain::entities::*;
 use crate::domain::repositories::*;
 use async_trait::async_trait;
 use anyhow::Result;
+use std::sync::Arc;
 
 /// Command for updating user preferences.
 #[derive(Debug)]
@@ -14,7 +15,7 @@ pub struct UpdateUserPreferencesCommand {
 }
 
 #[async_trait]
-pub trait UpdateUserPreferencesCommandHandler {
+pub trait UpdateUserPreferencesCommandHandler: Send + Sync {
     async fn handle(&self, command: UpdateUserPreferencesCommand) -> Result<()>;
 }
 
@@ -26,7 +27,7 @@ pub struct UpdateUserLanguageCommand {
 }
 
 #[async_trait]
-pub trait UpdateUserLanguageCommandHandler {
+pub trait UpdateUserLanguageCommandHandler: Send + Sync {
     async fn handle(&self, command: UpdateUserLanguageCommand) -> Result<()>;
 }
 
@@ -45,35 +46,27 @@ pub enum WhitelistAction {
 }
 
 #[async_trait]
-pub trait ManageWhitelistCommandHandler {
+pub trait ManageWhitelistCommandHandler: Send + Sync {
     async fn handle(&self, command: ManageWhitelistCommand) -> Result<()>;
 }
 
 /// Handler for cleaning URLs.
-pub struct CleanUrlCommandHandlerImpl<H, W> {
-    history_repository: H,
-    whitelist_repository: W,
+pub struct CleanUrlCommandHandlerImpl {
+    history_repository: Arc<dyn UrlHistoryRepository>,
+    _whitelist_repository: Arc<dyn WhitelistRepository>,
 }
 
-impl<H, W> CleanUrlCommandHandlerImpl<H, W>
-where
-    H: UrlHistoryRepository + Send + Sync,
-    W: WhitelistRepository + Send + Sync,
-{
-    pub fn new(history_repository: H, whitelist_repository: W) -> Self {
+impl CleanUrlCommandHandlerImpl {
+    pub fn new(history_repository: Arc<dyn UrlHistoryRepository>, _whitelist_repository: Arc<dyn WhitelistRepository>) -> Self {
         Self {
             history_repository,
-            whitelist_repository,
+            _whitelist_repository,
         }
     }
 }
 
 #[async_trait]
-impl<H, W> CleanUrlCommandHandler for CleanUrlCommandHandlerImpl<H, W>
-where
-    H: UrlHistoryRepository + Send + Sync,
-    W: WhitelistRepository + Send + Sync,
-{
+impl CleanUrlCommandHandler for CleanUrlCommandHandlerImpl {
     async fn handle(&self, command: CleanUrlCommand) -> Result<CleanUrlResult> {
         // TODO: Implement actual URL cleaning logic
         // For now, return a mock result
@@ -99,18 +92,18 @@ where
 }
 
 /// Handler for updating user preferences.
-pub struct UpdateUserPreferencesCommandHandlerImpl<R: UserRepository> {
-    user_repository: R,
+pub struct UpdateUserPreferencesCommandHandlerImpl {
+    user_repository: Arc<dyn UserRepository>,
 }
 
-impl<R: UserRepository> UpdateUserPreferencesCommandHandlerImpl<R> {
-    pub fn new(user_repository: R) -> Self {
+impl UpdateUserPreferencesCommandHandlerImpl {
+    pub fn new(user_repository: Arc<dyn UserRepository>) -> Self {
         Self { user_repository }
     }
 }
 
 #[async_trait]
-impl<R: UserRepository + Sync> UpdateUserPreferencesCommandHandler for UpdateUserPreferencesCommandHandlerImpl<R> {
+impl UpdateUserPreferencesCommandHandler for UpdateUserPreferencesCommandHandlerImpl {
     async fn handle(&self, command: UpdateUserPreferencesCommand) -> Result<()> {
         let mut user = self.user_repository.get_user(command.user_id).await?;
         user.preferences = command.preferences;
@@ -119,18 +112,18 @@ impl<R: UserRepository + Sync> UpdateUserPreferencesCommandHandler for UpdateUse
 }
 
 /// Handler for updating user language.
-pub struct UpdateUserLanguageCommandHandlerImpl<R: UserRepository> {
-    user_repository: R,
+pub struct UpdateUserLanguageCommandHandlerImpl {
+    user_repository: Arc<dyn UserRepository>,
 }
 
-impl<R: UserRepository> UpdateUserLanguageCommandHandlerImpl<R> {
-    pub fn new(user_repository: R) -> Self {
+impl UpdateUserLanguageCommandHandlerImpl {
+    pub fn new(user_repository: Arc<dyn UserRepository>) -> Self {
         Self { user_repository }
     }
 }
 
 #[async_trait]
-impl<R: UserRepository + Sync> UpdateUserLanguageCommandHandler for UpdateUserLanguageCommandHandlerImpl<R> {
+impl UpdateUserLanguageCommandHandler for UpdateUserLanguageCommandHandlerImpl {
     async fn handle(&self, command: UpdateUserLanguageCommand) -> Result<()> {
         let mut user = self.user_repository.get_user(command.user_id).await?;
         user.language = command.language;
@@ -139,18 +132,18 @@ impl<R: UserRepository + Sync> UpdateUserLanguageCommandHandler for UpdateUserLa
 }
 
 /// Handler for managing whitelist.
-pub struct ManageWhitelistCommandHandlerImpl<R: WhitelistRepository> {
-    whitelist_repository: R,
+pub struct ManageWhitelistCommandHandlerImpl {
+    whitelist_repository: Arc<dyn WhitelistRepository>,
 }
 
-impl<R: WhitelistRepository> ManageWhitelistCommandHandlerImpl<R> {
-    pub fn new(whitelist_repository: R) -> Self {
+impl ManageWhitelistCommandHandlerImpl {
+    pub fn new(whitelist_repository: Arc<dyn WhitelistRepository>) -> Self {
         Self { whitelist_repository }
     }
 }
 
 #[async_trait]
-impl<R: WhitelistRepository + Sync> ManageWhitelistCommandHandler for ManageWhitelistCommandHandlerImpl<R> {
+impl ManageWhitelistCommandHandler for ManageWhitelistCommandHandlerImpl {
     async fn handle(&self, command: ManageWhitelistCommand) -> Result<()> {
         match command.action {
             WhitelistAction::Add => {
