@@ -1,130 +1,113 @@
+//! Main entry point using Clean Architecture.
+
 use clear_urls_bot::{
-    bot,
+    application::{
+        commands::handlers::*,
+        queries::handlers::*,
+    },
+    domain::repositories::*,
+    infrastructure::repositories::*,
+    presentation::telegram::*,
+    shared::error::*,
     config::Config,
-    db::Db,
     logging,
-    sanitizer::{AiEngine, RuleEngine},
 };
-use std::time::Duration;
+use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::Bot;
-use tokio::signal::unix::{signal, SignalKind};
-use tokio::time::interval;
+use teloxide::macros::BotCommands;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> AppResult<()> {
     logging::init_logging();
-    tracing::info!("Avvio ClearURLs Bot");
+    tracing::info!("Avvio ClearURLs Bot con Clean Architecture");
 
     let config = Config::from_env()?;
     config.validate()?;
 
-    let db = Db::new(&config.database_url).await?;
-    let rules = RuleEngine::new_lazy(&config.clearurls_source);
-    let ai = AiEngine::new(&config);
+    // Initialize infrastructure layer
+    let pool = sqlx::PgPool::connect(&config.database_url).await?;
 
-    log_optional_feature("VirusTotal", "VIRUSTOTAL_API_KEY", "VIRUSTOTAL_ALERT_ONLY");
-    log_optional_feature("URLScan.io", "URLSCAN_API_KEY", "URLSCAN_ALERT_ONLY");
+    // Initialize repositories
+    let user_repo = Arc::new(PostgresUserRepository::new(pool.clone()));
+    let url_history_repo = Arc::new(PostgresUrlHistoryRepository::new(pool.clone()));
+    let whitelist_repo = Arc::new(PostgresWhitelistRepository::new(pool.clone()));
+    let statistics_repo = Arc::new(PostgresStatisticsRepository::new(pool.clone()));
 
-    // Reqwest client with longer timeout for Telegram long-polling
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
-        .build()?;
-    let bot = Bot::with_client(&config.bot_token, client);
-
-    // Real-time event channel (used by bot internally)
-    let (event_tx, _) = tokio::sync::broadcast::channel::<serde_json::Value>(100);
-
-    // Async-friendly panic notification: forward panics through a tokio channel
-    // instead of spinning up a new runtime inside a panic hook (which is unreliable
-    // on serverless containers that may be killed seconds after the panic).
-    let admin_id = config.admin_id;
-    let (panic_tx, mut panic_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let panic_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        panic_hook(info);
-        let _ = panic_tx.send(format!("[PANIC] {info}"));
-    }));
-    let bot_for_panic = bot.clone();
-    tokio::spawn(async move {
-        while let Some(msg) = panic_rx.recv().await {
-            tracing::error!("{msg}");
-            if admin_id != 0 {
-                let _ = bot_for_panic.send_message(ChatId(admin_id), msg).await;
-            }
-        }
-    });
-
-    let bot_task = tokio::spawn(bot::run_bot(
-        bot,
-        db.clone(),
-        rules.clone(),
-        ai,
-        config.clone(),
-        event_tx.clone(),
+    // Initialize command handlers
+    let clean_url_handler = Arc::new(CleanUrlCommandHandlerImpl::new(
+        url_history_repo.clone() as Arc<dyn UrlHistoryRepository>,
+        whitelist_repo.clone() as Arc<dyn WhitelistRepository>,
     ));
+    let update_user_prefs_handler = Arc::new(UpdateUserPreferencesCommandHandlerImpl::new(user_repo.clone() as Arc<dyn UserRepository>));
+    let update_user_lang_handler = Arc::new(UpdateUserLanguageCommandHandlerImpl::new(user_repo.clone() as Arc<dyn UserRepository>));
+    let manage_whitelist_handler = Arc::new(ManageWhitelistCommandHandlerImpl::new(whitelist_repo.clone() as Arc<dyn WhitelistRepository>));
 
-    let rules_refresh = rules.clone();
-    let refresh_task = tokio::spawn(async move {
-        if let Err(e) = rules_refresh.refresh().await {
-            tracing::error!("Errore nel download iniziale delle regole: {e}");
-        }
-        let mut tick = interval(Duration::from_secs(86400));
-        tick.tick().await;
-        loop {
-            tick.tick().await;
-            if let Err(e) = rules_refresh.refresh().await {
-                tracing::error!("Errore durante l'aggiornamento delle regole: {e}");
-            }
-        }
-    });
+    // Initialize query handlers
+    let get_user_profile_handler = Arc::new(GetUserProfileQueryHandlerImpl::new(user_repo.clone() as Arc<dyn UserRepository>));
+    let get_global_stats_handler = Arc::new(GetGlobalStatisticsQueryHandlerImpl::new(statistics_repo.clone() as Arc<dyn StatisticsRepository>));
+    let get_whitelist_handler = Arc::new(GetWhitelistQueryHandlerImpl::new(whitelist_repo.clone() as Arc<dyn WhitelistRepository>));
 
-    // Graceful shutdown: intercept SIGTERM (sent by Leapcell/K8s before stopping
-    // the container) and SIGINT (Ctrl-C in dev) so we close DB pool cleanly.
-    let mut sigterm = signal(SignalKind::terminate())?;
-    let mut sigint = signal(SignalKind::interrupt())?;
+    // Create application services container
+    let app_services = AppServices::new(
+        clean_url_handler,
+        update_user_prefs_handler,
+        update_user_lang_handler,
+        manage_whitelist_handler,
+        get_user_profile_handler,
+        get_global_stats_handler,
+        get_whitelist_handler,
+    );
 
-    tokio::select! {
-        _ = sigterm.recv() => tracing::info!("SIGTERM ricevuto, shutdown pulito"),
-        _ = sigint.recv()  => tracing::info!("SIGINT ricevuto, shutdown pulito"),
-        res = bot_task => match res {
-            Ok(_) => tracing::info!("Task bot terminato normalmente"),
-            Err(e) => tracing::error!("Task bot terminato con errore: {e:?}"),
-        },
-        res = refresh_task => match res {
-            Ok(_) => tracing::info!("Task refresh terminato normalmente"),
-            Err(e) => tracing::error!("Task refresh terminato con errore: {e:?}"),
-        },
-    }
+    // Initialize Telegram bot
+    let bot = Bot::new(&config.bot_token);
 
-    db.pool.close().await;
-    tracing::info!("Shutdown completato");
+    // Set up bot commands
+    let handler = dptree::entry()
+        .branch(
+            Update::filter_message()
+                .filter_command::<ClearUrlsBotCommand>()
+                .endpoint(handle_commands),
+        )
+        .branch(
+            Update::filter_message()
+                .endpoint(handle_url_cleaning),
+        );
+
+    // Start bot with dependency injection
+    Dispatcher::builder(bot, handler)
+        .dependencies(dptree::deps![app_services])
+        .enable_ctrlc_handler()
+        .build()
+        .dispatch()
+        .await;
+
     Ok(())
 }
 
-fn log_optional_feature(feature: &str, key_var: &str, alert_only_var: &str) {
-    let configured = std::env::var(key_var)
-        .map(|v| !v.is_empty() && !v.contains("your_"))
-        .unwrap_or(false);
+/// Bot commands enum.
+#[derive(BotCommands, Clone)]
+#[command(rename_rule = "lowercase")]
+pub enum ClearUrlsBotCommand {
+    Start,
+    Stats,
+    Whitelist,
+    Settings,
+}
 
-    if !configured {
-        tracing::info!("⚠️  {feature}: DISABILITATO (API key non configurata)");
-        return;
+/// Handle bot commands.
+async fn handle_commands(
+    bot: Bot,
+    msg: Message,
+    cmd: ClearUrlsBotCommand,
+    services: AppServices,
+) -> AppResult<()> {
+    match cmd {
+        ClearUrlsBotCommand::Start => handle_start(bot, msg, services).await?,
+        ClearUrlsBotCommand::Stats => handle_stats(bot, msg, services).await?,
+        ClearUrlsBotCommand::Whitelist => handle_whitelist(bot, msg, services).await?,
+        ClearUrlsBotCommand::Settings => handle_settings(bot, msg, services).await?,
     }
 
-    let alert_only = std::env::var(alert_only_var)
-        .ok()
-        .map(|v| {
-            !matches!(
-                v.trim().to_ascii_lowercase().as_str(),
-                "0" | "false" | "no" | "off"
-            )
-        })
-        .unwrap_or(true);
-
-    if alert_only {
-        tracing::info!("✅ {feature}: ABILITATO (modalità SOLO ALLERTA)");
-    } else {
-        tracing::info!("✅ {feature}: ABILITATO (modalità report completa)");
-    }
+    Ok(())
 }
