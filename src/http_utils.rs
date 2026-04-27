@@ -20,10 +20,7 @@ pub fn default_retry_strategy() -> impl Iterator<Item = Duration> {
 ///
 /// # Returns
 /// The result of the operation if successful, or the last error if all retries failed.
-pub async fn retry_with_backoff<T, E, Fut, F>(
-    operation: F,
-    operation_name: &str,
-) -> Result<T, E>
+pub async fn retry_with_backoff<T, E, Fut, F>(operation: F, operation_name: &str) -> Result<T, E>
 where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,

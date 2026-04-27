@@ -3,8 +3,8 @@
 use crate::application::queries::*;
 use crate::domain::entities::*;
 use crate::domain::repositories::*;
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 use std::sync::Arc;
 
 /// Handler for getting user profile.
@@ -32,7 +32,9 @@ pub struct GetGlobalStatisticsQueryHandlerImpl {
 
 impl GetGlobalStatisticsQueryHandlerImpl {
     pub fn new(statistics_repository: Arc<dyn StatisticsRepository>) -> Self {
-        Self { statistics_repository }
+        Self {
+            statistics_repository,
+        }
     }
 }
 
@@ -50,7 +52,9 @@ pub struct GetWhitelistQueryHandlerImpl {
 
 impl GetWhitelistQueryHandlerImpl {
     pub fn new(whitelist_repository: Arc<dyn WhitelistRepository>) -> Self {
-        Self { whitelist_repository }
+        Self {
+            whitelist_repository,
+        }
     }
 }
 

@@ -6,6 +6,7 @@
 //! triggers the lazy fetch of upstream data, which is then memoized in the
 //! TTL cache.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -111,9 +112,9 @@ impl RedirectService {
 
         // Append Farside instances whose `type` matches one of the LibRedirect
         // frontend kinds we already collected (e.g. `invidious`, `nitter`).
-        let known_kinds: Vec<String> = frontends.iter().map(|f| f.kind.clone()).collect();
+        let known_kinds: HashSet<String> = frontends.iter().map(|f| f.kind.clone()).collect();
         for fs in far.iter() {
-            if known_kinds.iter().any(|k| k == &fs.kind) {
+            if known_kinds.contains(&fs.kind) {
                 for url in &fs.instances {
                     frontends.push(Frontend {
                         service: matched_service.clone(),
@@ -137,10 +138,9 @@ impl RedirectService {
         self.inner
             .libredirect
             .get_or_try_insert_with(|| async move {
-                let resp = retry_http_request(
-                    || http.get(&url),
-                    "fetch libredirect catalogue"
-                ).await.context("GET libredirect")?;
+                let resp = retry_http_request(|| http.get(&url), "fetch libredirect catalogue")
+                    .await
+                    .context("GET libredirect")?;
                 let status = resp.status();
                 if !status.is_success() {
                     return Err(anyhow!("libredirect HTTP {status}"));
@@ -157,10 +157,9 @@ impl RedirectService {
         self.inner
             .farside
             .get_or_try_insert_with(|| async move {
-                let resp = retry_http_request(
-                    || http.get(&url),
-                    "fetch farside catalogue"
-                ).await.context("GET farside")?;
+                let resp = retry_http_request(|| http.get(&url), "fetch farside catalogue")
+                    .await
+                    .context("GET farside")?;
                 let status = resp.status();
                 if !status.is_success() {
                     return Err(anyhow!("farside HTTP {status}"));
@@ -332,7 +331,10 @@ mod tests {
 
     #[test]
     fn extract_host_trims_trailing_dot() {
-        assert_eq!(extract_host("https://www.youtube.com./watch").unwrap(), "youtube.com");
+        assert_eq!(
+            extract_host("https://www.youtube.com./watch").unwrap(),
+            "youtube.com"
+        );
     }
 
     #[test]

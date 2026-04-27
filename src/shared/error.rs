@@ -46,7 +46,9 @@ pub type AppResult<T> = Result<T, AppError>;
 impl From<crate::shared::security::SecurityError> for AppError {
     fn from(error: crate::shared::security::SecurityError) -> Self {
         match error {
-            crate::shared::security::SecurityError::RateLimitExceeded => AppError::RateLimitExceeded,
+            crate::shared::security::SecurityError::RateLimitExceeded => {
+                AppError::RateLimitExceeded
+            }
             _ => AppError::Security(error.to_string()),
         }
     }

@@ -24,7 +24,6 @@ pub enum Language {
     German,
 }
 
-
 /// User preferences for bot behavior.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct UserPreferences {
@@ -48,8 +47,8 @@ impl Default for UserPreferences {
 /// How the bot should handle cleaned URLs.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ActionMode {
-    Reply,    // Reply with cleaned URL
-    Delete,   // Delete message and repost (admin only)
+    Reply,  // Reply with cleaned URL
+    Delete, // Delete message and repost (admin only)
 }
 
 /// Represents a URL that needs to be cleaned.

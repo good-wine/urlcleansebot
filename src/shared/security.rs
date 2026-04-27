@@ -5,8 +5,8 @@
 //! - Rate limiting
 //! - Content security checks
 
-use regex::Regex;
 use once_cell::sync::Lazy;
+use regex::Regex;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -24,7 +24,8 @@ pub const RATE_LIMIT_REQUESTS: u32 = 10;
 pub const RATE_LIMIT_WINDOW: u64 = 60;
 
 /// Global rate limiter storage
-static RATE_LIMITER: Lazy<Mutex<HashMap<i64, Vec<Instant>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static RATE_LIMITER: Lazy<Mutex<HashMap<i64, Vec<Instant>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// Check if user is within rate limits
 pub fn check_rate_limit(user_id: i64) -> Result<(), SecurityError> {
@@ -49,14 +50,11 @@ pub fn check_rate_limit(user_id: i64) -> Result<(), SecurityError> {
 }
 
 /// Regex for URL validation
-static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^https?://[^\s/$.?#].[^\s]*$").unwrap()
-});
+static URL_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^https?://[^\s/$.?#].[^\s]*$").unwrap());
 
 /// Regex for detecting potentially malicious patterns
-static MALICIOUS_PATTERNS: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)(javascript:|data:|vbscript:|file:|ftp:|mailto:)").unwrap()
-});
+static MALICIOUS_PATTERNS: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)(javascript:|data:|vbscript:|file:|ftp:|mailto:)").unwrap());
 
 /// Validate and sanitize URL input
 pub fn validate_url(url: &str) -> Result<String, SecurityError> {
@@ -129,7 +127,8 @@ pub fn validate_domain(domain: &str) -> Result<String, SecurityError> {
         return Err(SecurityError::EmptyInput);
     }
 
-    if trimmed.len() > 253 { // Max domain length per RFC
+    if trimmed.len() > 253 {
+        // Max domain length per RFC
         return Err(SecurityError::ContentTooLong);
     }
 
@@ -187,9 +186,18 @@ mod tests {
     #[test]
     fn test_validate_url_invalid() {
         assert!(matches!(validate_url(""), Err(SecurityError::EmptyInput)));
-        assert!(matches!(validate_url("not-a-url"), Err(SecurityError::InvalidUrl)));
-        assert!(matches!(validate_url("javascript:alert(1)"), Err(SecurityError::MaliciousContent)));
-        assert!(matches!(validate_url(&"a".repeat(3000)), Err(SecurityError::UrlTooLong)));
+        assert!(matches!(
+            validate_url("not-a-url"),
+            Err(SecurityError::InvalidUrl)
+        ));
+        assert!(matches!(
+            validate_url("javascript:alert(1)"),
+            Err(SecurityError::MaliciousContent)
+        ));
+        assert!(matches!(
+            validate_url(&"a".repeat(3000)),
+            Err(SecurityError::UrlTooLong)
+        ));
     }
 
     #[test]
