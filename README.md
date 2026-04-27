@@ -106,7 +106,9 @@ Edit `.env` with your settings:
 TELOXIDE_TOKEN=your_bot_token
 BOT_USERNAME=@your_bot_username
 ADMIN_ID=your_telegram_user_id
-COOKIE_KEY=random_32_character_string
+
+# Optional: override bind address in webhook mode
+#SERVER_ADDR=0.0.0.0:8080
 
 # Optional for AI Deep Scan
 AI_API_KEY=your_ai_api_key
