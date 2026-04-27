@@ -5,9 +5,9 @@ use crate::application::queries::*;
 use crate::application::services::*;
 use crate::shared::error::AppResult;
 use crate::shared::security::*;
+use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::types::Message;
-use std::sync::Arc;
 
 /// Application services container for dependency injection.
 #[derive(Clone)]
@@ -44,23 +44,21 @@ impl AppServices {
 }
 
 /// Handle URL cleaning requests.
-pub async fn handle_url_cleaning(
-    bot: Bot,
-    msg: Message,
-    services: AppServices,
-) -> AppResult<()> {
+pub async fn handle_url_cleaning(bot: Bot, msg: Message, services: AppServices) -> AppResult<()> {
     if let Some(text) = msg.text() {
         let user_id = msg.chat.id.0;
 
         // Check rate limit first
         if let Err(SecurityError::RateLimitExceeded) = check_rate_limit(user_id) {
-            bot.send_message(msg.chat.id, "❌ Troppe richieste. Riprova tra un minuto.").await?;
+            bot.send_message(msg.chat.id, "❌ Troppe richieste. Riprova tra un minuto.")
+                .await?;
             return Ok(());
         }
 
         // Validate user ID
         if validate_user_id(user_id).is_err() {
-            bot.send_message(msg.chat.id, "❌ ID utente non valido").await?;
+            bot.send_message(msg.chat.id, "❌ ID utente non valido")
+                .await?;
             return Ok(());
         }
 
@@ -83,16 +81,26 @@ pub async fn handle_url_cleaning(
             Ok(result) => {
                 // Sanitize output for Telegram
                 let safe_url = sanitize_telegram_text(&result.cleaned_url);
-                let response = format!(
-                    "🧹 URL pulita:\n\n{}",
-                    safe_url
-                );
+                let mut response = format!("🧹 URL pulita:\n\n{}", safe_url);
+
+                if !result.alternatives.is_empty() {
+                    response.push_str("\n\n🔁 Frontend alternativi disponibili:\n");
+                    for alt in result.alternatives.iter().take(5) {
+                        response.push_str(&format!(
+                            "• {}: {}\n",
+                            sanitize_telegram_text(&alt.frontend),
+                            sanitize_telegram_text(&alt.url)
+                        ));
+                    }
+                }
+
                 bot.send_message(msg.chat.id, response).await?;
             }
             Err(e) => {
                 // Don't leak internal error details
                 tracing::error!("URL cleaning error for user {}: {}", user_id, e);
-                bot.send_message(msg.chat.id, "❌ Errore durante la pulizia dell'URL").await?;
+                bot.send_message(msg.chat.id, "❌ Errore durante la pulizia dell'URL")
+                    .await?;
             }
         }
     }
@@ -101,11 +109,7 @@ pub async fn handle_url_cleaning(
 }
 
 /// Handle /start command.
-pub async fn handle_start(
-    bot: Bot,
-    msg: Message,
-    _services: AppServices,
-) -> AppResult<()> {
+pub async fn handle_start(bot: Bot, msg: Message, _services: AppServices) -> AppResult<()> {
     let welcome_text = "👋 Benvenuto nel ClearURLs Bot!\n\n\
         Invia un URL da pulire e io rimuoverò tutti i parametri di tracciamento.\n\n\
         Comandi disponibili:\n\
@@ -118,33 +122,34 @@ pub async fn handle_start(
 }
 
 /// Handle /stats command.
-pub async fn handle_stats(
-    bot: Bot,
-    msg: Message,
-    services: AppServices,
-) -> AppResult<()> {
+pub async fn handle_stats(bot: Bot, msg: Message, services: AppServices) -> AppResult<()> {
     let user_id = msg.chat.id.0;
 
     // Validate user ID
     if validate_user_id(user_id).is_err() {
-        bot.send_message(msg.chat.id, "❌ ID utente non valido").await?;
+        bot.send_message(msg.chat.id, "❌ ID utente non valido")
+            .await?;
         return Ok(());
     }
 
-    match services.get_global_statistics_handler.handle(GetGlobalStatisticsQuery).await {
+    match services
+        .get_global_statistics_handler
+        .handle(GetGlobalStatisticsQuery)
+        .await
+    {
         Ok(stats) => {
             let response = format!(
                 "📊 Statistiche globali:\n\n\
                 👥 Utenti totali: {}\n\
                 🔗 URL pulite: {}",
-                stats.total_users,
-                stats.total_urls_cleaned
+                stats.total_users, stats.total_urls_cleaned
             );
             bot.send_message(msg.chat.id, response).await?;
         }
         Err(e) => {
             tracing::error!("Statistics error for user {}: {}", user_id, e);
-            bot.send_message(msg.chat.id, "❌ Errore nel recupero delle statistiche").await?;
+            bot.send_message(msg.chat.id, "❌ Errore nel recupero delle statistiche")
+                .await?;
         }
     }
 
@@ -152,25 +157,28 @@ pub async fn handle_stats(
 }
 
 /// Handle /whitelist command.
-pub async fn handle_whitelist(
-    bot: Bot,
-    msg: Message,
-    services: AppServices,
-) -> AppResult<()> {
+pub async fn handle_whitelist(bot: Bot, msg: Message, services: AppServices) -> AppResult<()> {
     let user_id = msg.chat.id.0;
 
     // Validate user ID
     if validate_user_id(user_id).is_err() {
-        bot.send_message(msg.chat.id, "❌ ID utente non valido").await?;
+        bot.send_message(msg.chat.id, "❌ ID utente non valido")
+            .await?;
         return Ok(());
     }
 
-    match services.get_whitelist_handler.handle(GetWhitelistQuery).await {
+    match services
+        .get_whitelist_handler
+        .handle(GetWhitelistQuery)
+        .await
+    {
         Ok(whitelist) => {
             if whitelist.is_empty() {
-                bot.send_message(msg.chat.id, "📝 La whitelist è vuota.").await?;
+                bot.send_message(msg.chat.id, "📝 La whitelist è vuota.")
+                    .await?;
             } else {
-                let domains: Vec<String> = whitelist.into_iter()
+                let domains: Vec<String> = whitelist
+                    .into_iter()
                     .map(|domain| sanitize_telegram_text(&domain))
                     .collect();
                 let domains_str = domains.join("\n• ");
@@ -180,7 +188,8 @@ pub async fn handle_whitelist(
         }
         Err(e) => {
             tracing::error!("Whitelist error for user {}: {}", user_id, e);
-            bot.send_message(msg.chat.id, "❌ Errore nel recupero della whitelist").await?;
+            bot.send_message(msg.chat.id, "❌ Errore nel recupero della whitelist")
+                .await?;
         }
     }
 
@@ -188,33 +197,37 @@ pub async fn handle_whitelist(
 }
 
 /// Handle /settings command.
-pub async fn handle_settings(
-    bot: Bot,
-    msg: Message,
-    services: AppServices,
-) -> AppResult<()> {
+pub async fn handle_settings(bot: Bot, msg: Message, services: AppServices) -> AppResult<()> {
     let user_id = msg.chat.id.0;
 
     // Validate user ID
     if validate_user_id(user_id).is_err() {
-        bot.send_message(msg.chat.id, "❌ ID utente non valido").await?;
+        bot.send_message(msg.chat.id, "❌ ID utente non valido")
+            .await?;
         return Ok(());
     }
 
-    match services.get_user_profile_handler.handle(GetUserProfileQuery { user_id }).await {
+    match services
+        .get_user_profile_handler
+        .handle(GetUserProfileQuery { user_id })
+        .await
+    {
         Ok(user) => {
             let response = format!(
                 "⚙️ Impostazioni:\n\n\
                 🌐 Lingua: {:?}\n\
                 🔧 Preferenze: {}",
                 user.language,
-                sanitize_telegram_text(&serde_json::to_string_pretty(&user.preferences).unwrap_or_default())
+                sanitize_telegram_text(
+                    &serde_json::to_string_pretty(&user.preferences).unwrap_or_default()
+                )
             );
             bot.send_message(msg.chat.id, response).await?;
         }
         Err(e) => {
             tracing::error!("Settings error for user {}: {}", user_id, e);
-            bot.send_message(msg.chat.id, "❌ Errore nel recupero delle impostazioni").await?;
+            bot.send_message(msg.chat.id, "❌ Errore nel recupero delle impostazioni")
+                .await?;
         }
     }
 

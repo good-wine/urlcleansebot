@@ -47,10 +47,10 @@ impl Config {
     pub fn from_env() -> AppResult<Self> {
         dotenv().ok();
 
-        let bot_token =
-            env::var("TELOXIDE_TOKEN").map_err(|_| AppError::Config("TELOXIDE_TOKEN deve essere impostato".to_string()))?;
-        let mut bot_username =
-            env::var("BOT_USERNAME").map_err(|_| AppError::Config("BOT_USERNAME deve essere impostato".to_string()))?;
+        let bot_token = env::var("TELOXIDE_TOKEN")
+            .map_err(|_| AppError::Config("TELOXIDE_TOKEN deve essere impostato".to_string()))?;
+        let mut bot_username = env::var("BOT_USERNAME")
+            .map_err(|_| AppError::Config("BOT_USERNAME deve essere impostato".to_string()))?;
         if bot_username.starts_with('@') {
             bot_username = bot_username[1..].to_string();
         }
@@ -141,13 +141,19 @@ impl Config {
     /// Returns an error if validation fails.
     pub fn validate(&self) -> AppResult<()> {
         if self.bot_token.is_empty() || !self.bot_token.contains(':') {
-            return Err(AppError::Config("FATAL: TELOXIDE_TOKEN non è valido o è vuoto. Controlla il file .env".to_string()));
+            return Err(AppError::Config(
+                "FATAL: TELOXIDE_TOKEN non è valido o è vuoto. Controlla il file .env".to_string(),
+            ));
         }
         if self.bot_username.is_empty() {
-            return Err(AppError::Config("FATAL: BOT_USERNAME deve essere configurato".to_string()));
+            return Err(AppError::Config(
+                "FATAL: BOT_USERNAME deve essere configurato".to_string(),
+            ));
         }
         if self.inline_max_results == 0 {
-            return Err(AppError::Config("FATAL: INLINE_MAX_RESULTS deve essere maggiore di 0".to_string()));
+            return Err(AppError::Config(
+                "FATAL: INLINE_MAX_RESULTS deve essere maggiore di 0".to_string(),
+            ));
         }
 
         // Render Reserved Ports check
@@ -164,13 +170,16 @@ impl Config {
         // Webhook validation
         if let Some(url) = &self.webhook_url {
             if !url.starts_with("https://") {
-                return Err(AppError::Config("FATAL: WEBHOOK_URL deve usare HTTPS (Telegram lo richiede).".to_string()));
+                return Err(AppError::Config(
+                    "FATAL: WEBHOOK_URL deve usare HTTPS (Telegram lo richiede).".to_string(),
+                ));
             }
             let secret = self.webhook_secret.as_deref().unwrap_or("");
             if secret.is_empty() {
                 return Err(AppError::Config(
                     "FATAL: WEBHOOK_SECRET e' obbligatorio quando WEBHOOK_URL e' impostato. \
-                     Generalo con: openssl rand -hex 32".to_string()
+                     Generalo con: openssl rand -hex 32"
+                        .to_string(),
                 ));
             }
             if secret.len() < 16 || secret.len() > 256 {

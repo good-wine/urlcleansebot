@@ -3,10 +3,10 @@
 use crate::application::services::*;
 use crate::domain::entities::*;
 use crate::domain::repositories::*;
-use crate::sanitizer::RuleEngine;
 use crate::redirects::RedirectService;
-use async_trait::async_trait;
+use crate::sanitizer::RuleEngine;
 use anyhow::Result;
+use async_trait::async_trait;
 use std::sync::Arc;
 
 /// Command for updating user preferences.
@@ -91,15 +91,19 @@ impl CleanUrlCommandHandler for CleanUrlCommandHandlerImpl {
 
         // Get alternative frontends
         let alternatives = if let Ok(Some(hit)) = self.redirect_service.lookup(&cleaned_url).await {
-            hit.frontends.into_iter().take(3).map(|frontend| {
-                let service = frontend.service.clone();
-                AlternativeFrontend {
-                    service: frontend.service,
-                    frontend: frontend.kind,
-                    url: frontend.url,
-                    description: format!("Alternative frontend for {}", service),
-                }
-            }).collect()
+            hit.frontends
+                .into_iter()
+                .take(3)
+                .map(|frontend| {
+                    let service = frontend.service.clone();
+                    AlternativeFrontend {
+                        service: frontend.service,
+                        frontend: frontend.kind,
+                        url: frontend.url,
+                        description: format!("Alternative frontend for {}", service),
+                    }
+                })
+                .collect()
         } else {
             vec![]
         };
@@ -108,7 +112,11 @@ impl CleanUrlCommandHandler for CleanUrlCommandHandlerImpl {
         let result = CleanUrlResult {
             original_url: original_url.clone(),
             cleaned_url: cleaned_url.clone(),
-            warnings: if changed { vec!["URL cleaned".to_string()] } else { vec![] },
+            warnings: if changed {
+                vec!["URL cleaned".to_string()]
+            } else {
+                vec![]
+            },
             alternatives,
         };
 
@@ -173,7 +181,9 @@ pub struct ManageWhitelistCommandHandlerImpl {
 
 impl ManageWhitelistCommandHandlerImpl {
     pub fn new(whitelist_repository: Arc<dyn WhitelistRepository>) -> Self {
-        Self { whitelist_repository }
+        Self {
+            whitelist_repository,
+        }
     }
 }
 
@@ -182,10 +192,14 @@ impl ManageWhitelistCommandHandler for ManageWhitelistCommandHandlerImpl {
     async fn handle(&self, command: ManageWhitelistCommand) -> Result<()> {
         match command.action {
             WhitelistAction::Add => {
-                self.whitelist_repository.add_to_whitelist(&command.domain).await
+                self.whitelist_repository
+                    .add_to_whitelist(&command.domain)
+                    .await
             }
             WhitelistAction::Remove => {
-                self.whitelist_repository.remove_from_whitelist(&command.domain).await
+                self.whitelist_repository
+                    .remove_from_whitelist(&command.domain)
+                    .await
             }
         }
     }

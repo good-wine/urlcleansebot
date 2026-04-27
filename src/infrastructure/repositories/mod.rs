@@ -2,9 +2,9 @@
 
 use crate::domain::entities::*;
 use crate::domain::repositories::*;
+use anyhow::Result;
 use async_trait::async_trait;
 use sqlx::{PgPool, Row};
-use anyhow::Result;
 
 /// PostgreSQL implementation of UserRepository.
 pub struct PostgresUserRepository {
@@ -20,10 +20,12 @@ impl PostgresUserRepository {
 #[async_trait]
 impl UserRepository for PostgresUserRepository {
     async fn get_user(&self, user_id: i64) -> Result<User> {
-        let row = sqlx::query("SELECT user_id, username, language, preferences FROM users WHERE user_id = $1")
-            .bind(user_id)
-            .fetch_one(&self.pool)
-            .await?;
+        let row = sqlx::query(
+            "SELECT user_id, username, language, preferences FROM users WHERE user_id = $1",
+        )
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await?;
 
         let language_str: String = row.get("language");
         let language = match language_str.as_str() {
@@ -54,7 +56,7 @@ impl UserRepository for PostgresUserRepository {
 
         sqlx::query(
             "INSERT INTO users (user_id, username, language, preferences) VALUES ($1, $2, $3, $4)
-             ON CONFLICT (user_id) DO UPDATE SET username = $2, language = $3, preferences = $4"
+             ON CONFLICT (user_id) DO UPDATE SET username = $2, language = $3, preferences = $4",
         )
         .bind(user.id)
         .bind(&user.username)
@@ -97,7 +99,7 @@ impl UrlHistoryRepository for PostgresUrlHistoryRepository {
     async fn get_user_history(&self, user_id: i64, limit: usize) -> Result<Vec<UrlHistory>> {
         let rows = sqlx::query(
             "SELECT user_id, original_url, cleaned_url, timestamp FROM url_history
-             WHERE user_id = $1 ORDER BY timestamp DESC LIMIT $2"
+             WHERE user_id = $1 ORDER BY timestamp DESC LIMIT $2",
         )
         .bind(user_id)
         .bind(limit as i64)
