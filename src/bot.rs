@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{
     db::{models::UserConfig, Db},
     http_utils::retry_http_request,
@@ -1060,6 +1062,8 @@ pub async fn handle_message(
     let custom_rules = db.get_custom_rules(user_id).await.unwrap_or_default();
     let msg_id = msg.id;
     let mut cleaned_urls = Vec::new();
+    let mut all_urls = Vec::new();
+    let mut all_urls_seen = HashSet::new();
 
     let mut url_candidates = Vec::new();
 
@@ -1114,6 +1118,9 @@ pub async fn handle_message(
     for url_str in url_candidates {
         // 1. Expand shortened URLs first
         let expanded_url = rules.expand_url(&url_str).await;
+        if all_urls_seen.insert(expanded_url.clone()) {
+            all_urls.push(expanded_url.clone());
+        }
         let original_url_str = url_str.clone();
 
         // Check whitelist before security checks
@@ -1204,6 +1211,7 @@ pub async fn handle_message(
 
     if cleaned_urls.is_empty() {
         tracing::info!("Elaborazione completata: nessun URL da pulire (gia' puliti)");
+        send_alternative_frontends(&bot, chat_id, &all_urls, &redirect_service).await?;
         return Ok(());
     }
 
@@ -1340,15 +1348,33 @@ pub async fn handle_message(
         return Err(e);
     }
 
-    // Check for alternative frontends for popular services
-    for (_, cleaned_url, _) in &cleaned_urls {
-        if let Ok(Some(hit)) = redirect_service.lookup(cleaned_url).await {
-            let frontend_msg = format_hit_html(&hit, 3);
-            let _ = bot
-                .send_message(chat_id, frontend_msg)
-                .parse_mode(ParseMode::Html)
-                .await;
-            break; // Only send one frontend message per batch of URLs
+    send_alternative_frontends(&bot, chat_id, &all_urls, &redirect_service).await?;
+
+    Ok(())
+}
+
+async fn send_alternative_frontends(
+    bot: &Bot,
+    chat_id: ChatId,
+    urls: &[String],
+    redirect_service: &RedirectService,
+) -> ResponseResult<()> {
+    let mut seen_hosts = HashSet::new();
+    for url in urls {
+        if let Ok(host) = crate::redirects::extract_host(url) {
+            let host = host.trim_start_matches("www.").to_ascii_lowercase();
+            if !seen_hosts.insert(host.clone()) {
+                continue;
+            }
+
+            if let Ok(Some(hit)) = redirect_service.lookup_by_host(&host).await {
+                let frontend_msg = format_hit_html(&hit, 3);
+                let _ = bot
+                    .send_message(chat_id, frontend_msg)
+                    .parse_mode(ParseMode::Html)
+                    .await;
+                break; // Only send one frontend message per batch of URLs
+            }
         }
     }
 
