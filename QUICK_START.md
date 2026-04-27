@@ -32,8 +32,8 @@ TELOXIDE_TOKEN=il_tuo_token_bot_telegram
 BOT_USERNAME=@il_tuo_bot_username
 ADMIN_ID=il_tuo_user_id_telegram
 
-# Opzionale ma raccomandato
-COOKIE_KEY=genera_una_stringa_random_di_32_caratteri
+# Opzionale: override dell'indirizzo di bind in modalità webhook
+#SERVER_ADDR=0.0.0.0:8080
 ```
 
 ### 3. Avvia il bot

@@ -27,7 +27,7 @@ async fn main() -> AppResult<()> {
     config.validate()?;
 
     // Initialize infrastructure layer
-    let pool = sqlx::postgres::PgPoolOptions::new()
+    let pool = sqlx::any::AnyPoolOptions::new()
         .max_connections(10)
         .acquire_timeout(std::time::Duration::from_secs(30))
         .idle_timeout(std::time::Duration::from_secs(300))

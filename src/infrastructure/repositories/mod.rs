@@ -4,15 +4,16 @@ use crate::domain::entities::*;
 use crate::domain::repositories::*;
 use anyhow::Result;
 use async_trait::async_trait;
-use sqlx::{PgPool, Row};
+use chrono::Utc;
+use sqlx::{AnyPool, Row};
 
-/// PostgreSQL implementation of UserRepository.
+/// Database implementation of UserRepository.
 pub struct PostgresUserRepository {
-    pool: PgPool,
+    pool: AnyPool,
 }
 
 impl PostgresUserRepository {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: AnyPool) -> Self {
         Self { pool }
     }
 }
@@ -41,7 +42,7 @@ impl UserRepository for PostgresUserRepository {
             id: row.get("user_id"),
             username: row.get("username"),
             language,
-            preferences: serde_json::from_value(row.get("preferences"))?,
+            preferences: serde_json::from_str(&row.get::<String, _>("preferences"))?,
         })
     }
 
@@ -61,7 +62,7 @@ impl UserRepository for PostgresUserRepository {
         .bind(user.id)
         .bind(&user.username)
         .bind(language_str)
-        .bind(serde_json::to_value(&user.preferences)?)
+        .bind(serde_json::to_string(&user.preferences)?)
         .execute(&self.pool)
         .await?;
 
@@ -69,13 +70,13 @@ impl UserRepository for PostgresUserRepository {
     }
 }
 
-/// PostgreSQL implementation of UrlHistoryRepository.
+/// Database implementation of UrlHistoryRepository.
 pub struct PostgresUrlHistoryRepository {
-    pool: PgPool,
+    pool: AnyPool,
 }
 
 impl PostgresUrlHistoryRepository {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: AnyPool) -> Self {
         Self { pool }
     }
 }
@@ -89,7 +90,7 @@ impl UrlHistoryRepository for PostgresUrlHistoryRepository {
         .bind(history.user_id)
         .bind(&history.original_url)
         .bind(&history.cleaned_url)
-        .bind(history.timestamp)
+        .bind(history.timestamp.to_rfc3339())
         .execute(&self.pool)
         .await?;
 
@@ -112,7 +113,7 @@ impl UrlHistoryRepository for PostgresUrlHistoryRepository {
                 user_id: row.get("user_id"),
                 original_url: row.get("original_url"),
                 cleaned_url: row.get("cleaned_url"),
-                timestamp: row.get("timestamp"),
+                timestamp: chrono::DateTime::parse_from_rfc3339(&row.get::<String, _>("timestamp"))?.with_timezone(&Utc),
             });
         }
 
@@ -120,13 +121,13 @@ impl UrlHistoryRepository for PostgresUrlHistoryRepository {
     }
 }
 
-/// PostgreSQL implementation of WhitelistRepository.
+/// Database implementation of WhitelistRepository.
 pub struct PostgresWhitelistRepository {
-    pool: PgPool,
+    pool: AnyPool,
 }
 
 impl PostgresWhitelistRepository {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: AnyPool) -> Self {
         Self { pool }
     }
 }
@@ -169,13 +170,13 @@ impl WhitelistRepository for PostgresWhitelistRepository {
     }
 }
 
-/// PostgreSQL implementation of StatisticsRepository.
+/// Database implementation of StatisticsRepository.
 pub struct PostgresStatisticsRepository {
-    pool: PgPool,
+    pool: AnyPool,
 }
 
 impl PostgresStatisticsRepository {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: AnyPool) -> Self {
         Self { pool }
     }
 }
