@@ -11,11 +11,14 @@ use clear_urls_bot::{
     shared::error::*,
     config::Config,
     logging,
+    sanitizer::RuleEngine,
+    redirects::RedirectService,
 };
 use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::Bot;
 use teloxide::macros::BotCommands;
+use teloxide::update_listeners::webhooks;
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
@@ -28,6 +31,13 @@ async fn main() -> AppResult<()> {
     // Initialize infrastructure layer
     let pool = sqlx::PgPool::connect(&config.database_url).await?;
 
+    // Initialize rule engine
+    let rule_engine = Arc::new(RuleEngine::new_lazy(&config.clearurls_source));
+
+    // Initialize redirect service
+    let redirect_service = RedirectService::from_config(&config.libredirect_url, &config.farside_url)
+        .expect("Failed to initialize redirect service");
+
     // Initialize repositories
     let user_repo = Arc::new(PostgresUserRepository::new(pool.clone()));
     let url_history_repo = Arc::new(PostgresUrlHistoryRepository::new(pool.clone()));
@@ -38,6 +48,8 @@ async fn main() -> AppResult<()> {
     let clean_url_handler = Arc::new(CleanUrlCommandHandlerImpl::new(
         url_history_repo.clone() as Arc<dyn UrlHistoryRepository>,
         whitelist_repo.clone() as Arc<dyn WhitelistRepository>,
+        rule_engine.clone(),
+        redirect_service,
     ));
     let update_user_prefs_handler = Arc::new(UpdateUserPreferencesCommandHandlerImpl::new(user_repo.clone() as Arc<dyn UserRepository>));
     let update_user_lang_handler = Arc::new(UpdateUserLanguageCommandHandlerImpl::new(user_repo.clone() as Arc<dyn UserRepository>));
@@ -75,12 +87,44 @@ async fn main() -> AppResult<()> {
         );
 
     // Start bot with dependency injection
-    Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![app_services])
-        .enable_ctrlc_handler()
-        .build()
-        .dispatch()
-        .await;
+    if let Some(webhook_url) = &config.webhook_url {
+        // Webhook mode
+        tracing::info!("Avvio in modalità webhook: {}", webhook_url);
+        
+        let webhook_secret = config.webhook_secret.as_ref()
+            .ok_or_else(|| AppError::Config("WEBHOOK_SECRET è richiesto quando WEBHOOK_URL è impostato".to_string()))?;
+        
+        let addr = config.server_addr.parse()
+            .map_err(|_| AppError::Config("SERVER_ADDR non valido".to_string()))?;
+        
+        // Parse webhook URL
+        let parsed_url = url::Url::parse(webhook_url)
+            .map_err(|e| AppError::Config(format!("WEBHOOK_URL non valido: {}", e)))?;
+        
+        // Create webhook options
+        let opts = webhooks::Options::new(addr, parsed_url)
+            .secret_token(webhook_secret.clone());
+        
+        // Create webhook listener
+        let listener = webhooks::axum(bot.clone(), opts).await
+            .map_err(|e| AppError::Config(format!("Errore creazione webhook listener: {}", e)))?;
+        
+        // Start dispatcher with webhook listener
+        Dispatcher::builder(bot, handler)
+            .dependencies(dptree::deps![app_services])
+            .build()
+            .dispatch_with_listener(listener, Arc::new(|_| async {}))
+            .await;
+    } else {
+        // Long-polling mode
+        tracing::info!("Avvio in modalità long-polling");
+        Dispatcher::builder(bot, handler)
+            .dependencies(dptree::deps![app_services])
+            .enable_ctrlc_handler()
+            .build()
+            .dispatch()
+            .await;
+    }
 
     Ok(())
 }

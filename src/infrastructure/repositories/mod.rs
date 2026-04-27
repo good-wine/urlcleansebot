@@ -20,7 +20,7 @@ impl PostgresUserRepository {
 #[async_trait]
 impl UserRepository for PostgresUserRepository {
     async fn get_user(&self, user_id: i64) -> Result<User> {
-        let row = sqlx::query("SELECT user_id, language, preferences FROM users WHERE user_id = $1")
+        let row = sqlx::query("SELECT user_id, username, language, preferences FROM users WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&self.pool)
             .await?;
@@ -37,7 +37,7 @@ impl UserRepository for PostgresUserRepository {
 
         Ok(User {
             id: row.get("user_id"),
-            username: None, // TODO: Add username column to database
+            username: row.get("username"),
             language,
             preferences: serde_json::from_value(row.get("preferences"))?,
         })
@@ -53,10 +53,11 @@ impl UserRepository for PostgresUserRepository {
         };
 
         sqlx::query(
-            "INSERT INTO users (user_id, language, preferences) VALUES ($1, $2, $3)
-             ON CONFLICT (user_id) DO UPDATE SET language = $2, preferences = $3"
+            "INSERT INTO users (user_id, username, language, preferences) VALUES ($1, $2, $3, $4)
+             ON CONFLICT (user_id) DO UPDATE SET username = $2, language = $3, preferences = $4"
         )
         .bind(user.id)
+        .bind(&user.username)
         .bind(language_str)
         .bind(serde_json::to_value(&user.preferences)?)
         .execute(&self.pool)

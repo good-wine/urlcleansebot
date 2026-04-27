@@ -13,6 +13,9 @@ pub enum AppError {
     #[error("HTTP request error: {0}")]
     Http(#[from] reqwest::Error),
 
+    #[error("URL parsing error: {0}")]
+    Url(#[from] url::ParseError),
+
     #[error("Telegram bot error: {0}")]
     Telegram(#[from] teloxide::RequestError),
 

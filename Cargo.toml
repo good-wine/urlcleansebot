@@ -9,6 +9,7 @@ default-run = "clear_urls_bot"
 # Tokio with only needed features (instead of "full")
 tokio = { version = "1.41", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "fs"] }
 teloxide = { version = "0.17", default-features = false, features = ["macros", "webhooks", "webhooks-axum", "ctrlc_handler", "rustls"] }
+axum = "0.7"
 dptree = "0.5"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "postgres", "macros", "uuid", "any", "chrono"] }
 serde = { version = "1.0", features = ["derive"] }

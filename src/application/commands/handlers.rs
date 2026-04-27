@@ -3,6 +3,8 @@
 use crate::application::services::*;
 use crate::domain::entities::*;
 use crate::domain::repositories::*;
+use crate::sanitizer::RuleEngine;
+use crate::redirects::RedirectService;
 use async_trait::async_trait;
 use anyhow::Result;
 use std::sync::Arc;
@@ -54,13 +56,22 @@ pub trait ManageWhitelistCommandHandler: Send + Sync {
 pub struct CleanUrlCommandHandlerImpl {
     history_repository: Arc<dyn UrlHistoryRepository>,
     _whitelist_repository: Arc<dyn WhitelistRepository>,
+    rule_engine: Arc<RuleEngine>,
+    redirect_service: RedirectService,
 }
 
 impl CleanUrlCommandHandlerImpl {
-    pub fn new(history_repository: Arc<dyn UrlHistoryRepository>, _whitelist_repository: Arc<dyn WhitelistRepository>) -> Self {
+    pub fn new(
+        history_repository: Arc<dyn UrlHistoryRepository>,
+        _whitelist_repository: Arc<dyn WhitelistRepository>,
+        rule_engine: Arc<RuleEngine>,
+        redirect_service: RedirectService,
+    ) -> Self {
         Self {
             history_repository,
             _whitelist_repository,
+            rule_engine,
+            redirect_service,
         }
     }
 }
@@ -68,20 +79,44 @@ impl CleanUrlCommandHandlerImpl {
 #[async_trait]
 impl CleanUrlCommandHandler for CleanUrlCommandHandlerImpl {
     async fn handle(&self, command: CleanUrlCommand) -> Result<CleanUrlResult> {
-        // TODO: Implement actual URL cleaning logic
-        // For now, return a mock result
+        // Parse the URL
+        let mut url = url::Url::parse(&command.url)?;
+
+        // Store original URL
+        let original_url = url.to_string();
+
+        // Clean the URL using the rule engine
+        let changed = self.rule_engine.clean_url_in_place(&mut url);
+        let cleaned_url = url.to_string();
+
+        // Get alternative frontends
+        let alternatives = if let Ok(Some(hit)) = self.redirect_service.lookup(&cleaned_url).await {
+            hit.frontends.into_iter().take(3).map(|frontend| {
+                let service = frontend.service.clone();
+                AlternativeFrontend {
+                    service: frontend.service,
+                    frontend: frontend.kind,
+                    url: frontend.url,
+                    description: format!("Alternative frontend for {}", service),
+                }
+            }).collect()
+        } else {
+            vec![]
+        };
+
+        // Create result
         let result = CleanUrlResult {
-            original_url: command.url.clone(),
-            cleaned_url: command.url.clone(), // Mock: no cleaning applied
-            warnings: vec![],
-            alternatives: vec![],
+            original_url: original_url.clone(),
+            cleaned_url: cleaned_url.clone(),
+            warnings: if changed { vec!["URL cleaned".to_string()] } else { vec![] },
+            alternatives,
         };
 
         // Save to history
         let history = UrlHistory {
             user_id: command.user_id,
-            original_url: result.original_url.clone(),
-            cleaned_url: result.cleaned_url.clone(),
+            original_url,
+            cleaned_url,
             timestamp: chrono::Utc::now(),
         };
 
