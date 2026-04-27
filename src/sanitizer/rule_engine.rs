@@ -26,7 +26,8 @@ static SENSITIVE_PATTERNS: LazyLock<HashMap<&'static str, Regex>> = LazyLock::ne
     m.insert("ipv4", Regex::new(r"(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)").expect("Invalid regex for ipv4"));
     m.insert(
         "email",
-        Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").expect("Invalid regex for email"),
+        Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+            .expect("Invalid regex for email"),
     );
     m
 });
@@ -97,10 +98,10 @@ impl RuleEngine {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()?;
-        let resp = retry_http_request(
-            || client.get(&self.source_url),
-            "download ClearURLs rules"
-        ).await?.text().await?;
+        let resp = retry_http_request(|| client.get(&self.source_url), "download ClearURLs rules")
+            .await?
+            .text()
+            .await?;
 
         let data: ClearUrlsData =
             serde_json::from_str(&resp).context("Impossibile analizzare il JSON di ClearURLs")?;

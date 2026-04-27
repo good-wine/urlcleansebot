@@ -3,8 +3,8 @@
 //! These define the contracts that infrastructure implementations must fulfill.
 
 use crate::domain::entities::*;
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 
 /// Repository for user data operations.
 #[async_trait]

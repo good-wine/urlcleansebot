@@ -3,8 +3,8 @@
 //! These services orchestrate domain operations and enforce business rules.
 
 use crate::domain::entities::*;
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 
 /// Service for URL cleaning operations.
 #[async_trait]
@@ -48,8 +48,16 @@ pub trait UserService {
 /// Service for statistics calculation.
 pub trait StatisticsService {
     /// Calculate user statistics.
-    fn calculate_user_stats(&self, user_id: i64, cleaning_results: &[CleaningResult]) -> UserStatistics;
+    fn calculate_user_stats(
+        &self,
+        user_id: i64,
+        cleaning_results: &[CleaningResult],
+    ) -> UserStatistics;
 
     /// Calculate global statistics.
-    fn calculate_global_stats(&self, all_users: &[User], all_results: &[CleaningResult]) -> GlobalStatistics;
+    fn calculate_global_stats(
+        &self,
+        all_users: &[User],
+        all_results: &[CleaningResult],
+    ) -> GlobalStatistics;
 }

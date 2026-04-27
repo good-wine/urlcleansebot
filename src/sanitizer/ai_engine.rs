@@ -26,7 +26,10 @@ impl AiEngine {
                 .timeout(Duration::from_secs(AI_TIMEOUT_SECS))
                 .build()
                 .unwrap_or_else(|e| {
-                    log::warn!("Failed to build AI client with timeout: {}, using default client", e);
+                    log::warn!(
+                        "Failed to build AI client with timeout: {}, using default client",
+                        e
+                    );
                     Client::new()
                 }),
             api_key: config.ai_api_key.clone(),

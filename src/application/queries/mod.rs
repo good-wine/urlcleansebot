@@ -8,7 +8,10 @@ pub struct GetUserProfileQuery {
 
 #[async_trait::async_trait]
 pub trait GetUserProfileQueryHandler: Send + Sync {
-    async fn handle(&self, query: GetUserProfileQuery) -> anyhow::Result<crate::domain::entities::User>;
+    async fn handle(
+        &self,
+        query: GetUserProfileQuery,
+    ) -> anyhow::Result<crate::domain::entities::User>;
 }
 
 /// Query for global statistics.
@@ -17,7 +20,10 @@ pub struct GetGlobalStatisticsQuery;
 
 #[async_trait::async_trait]
 pub trait GetGlobalStatisticsQueryHandler: Send + Sync {
-    async fn handle(&self, _query: GetGlobalStatisticsQuery) -> anyhow::Result<crate::domain::entities::GlobalStatistics>;
+    async fn handle(
+        &self,
+        _query: GetGlobalStatisticsQuery,
+    ) -> anyhow::Result<crate::domain::entities::GlobalStatistics>;
 }
 
 /// Query for whitelisted domains.

@@ -69,8 +69,8 @@ TELOXIDE_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
 BOT_USERNAME=@your_bot_username
 ADMIN_ID=123456789
 
-# Security
-COOKIE_KEY=your_32_character_random_string_here
+# Optional webhook bind address (override default 0.0.0.0:8080)
+#SERVER_ADDR=0.0.0.0:8080
 
 # Application
 APP_ENV=production
