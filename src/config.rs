@@ -2,8 +2,8 @@ use crate::shared::error::{AppError, AppResult};
 use dotenvy::dotenv;
 use std::env;
 
-const DEFAULT_DATABASE_URL: &str = "sqlite:bot.db";
-const DEFAULT_PORT: &str = "3000";
+const DEFAULT_DATABASE_URL: &str = "sqlite:bot.db?mode=rwc";
+const DEFAULT_PORT: u16 = 8080;
 const DEFAULT_CLEARURLS_SOURCE: &str =
     "https://raw.githubusercontent.com/ClearURLs/Rules/refs/heads/master/data.min.json";
 const DEFAULT_LIBREDIRECT_URL: &str =
@@ -13,6 +13,7 @@ const DEFAULT_FARSIDE_URL: &str =
 const DEFAULT_AI_API_BASE: &str = "https://api.openai.com/v1";
 const DEFAULT_AI_MODEL: &str = "gpt-3.5-turbo";
 const DEFAULT_INLINE_MAX_RESULTS: usize = 5;
+const RESERVED_PORTS: &[u16] = &[18012, 18013, 19099];
 
 /// Configuration for the bot, loaded from environment variables.
 #[derive(Clone, Debug)]
@@ -55,51 +56,69 @@ impl Config {
             bot_username = bot_username[1..].to_string();
         }
         let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
-            log::error!("DATABASE_URL non trovato, uso default.");
-            DEFAULT_DATABASE_URL.to_string()
+            let fallback = if std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open("bot.db")
+                .is_ok()
+            {
+                let _ = std::fs::remove_file("bot.db");
+                DEFAULT_DATABASE_URL.to_string()
+            } else {
+                tracing::warn!(
+                    "Filesystem di sola lettura rilevato, uso /tmp/bot.db per il database."
+                );
+                "sqlite:/tmp/bot.db?mode=rwc".to_string()
+            };
+            tracing::warn!("DATABASE_URL non trovato, uso default: {}", fallback);
+            fallback
         });
-        let port = env::var("PORT").unwrap_or_else(|_| {
-            log::error!("PORT non trovato, uso default.");
-            DEFAULT_PORT.to_string()
-        });
+        let port: u16 = env::var("PORT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| {
+                tracing::warn!("PORT non valido o mancante, uso default {}.", DEFAULT_PORT);
+                DEFAULT_PORT
+            });
         let server_addr = env::var("SERVER_ADDR").unwrap_or_else(|_| {
-            log::error!("SERVER_ADDR non trovato, uso default.");
+            tracing::warn!("SERVER_ADDR non trovato, uso default.");
             format!("0.0.0.0:{}", port)
         });
 
         let admin_id = env::var("ADMIN_ID")
             .unwrap_or_else(|_| {
-                log::error!("ADMIN_ID non trovato, uso '0'.");
+                tracing::warn!("ADMIN_ID non trovato, uso '0'.");
                 "0".to_string()
             })
             .parse()
             .unwrap_or_else(|_| {
-                log::error!("ADMIN_ID non valido, uso 0.");
+                tracing::warn!("ADMIN_ID non valido, uso 0.");
                 0
             });
 
         let clearurls_source = env::var("CLEARURLS_SOURCE").unwrap_or_else(|_| {
-            log::error!("CLEARURLS_SOURCE non trovato, uso default.");
+            tracing::warn!("CLEARURLS_SOURCE non trovato, uso default.");
             DEFAULT_CLEARURLS_SOURCE.to_string()
         });
 
         let libredirect_url = env::var("LIBREDIRECT_URL").unwrap_or_else(|_| {
-            log::error!("LIBREDIRECT_URL non trovato, uso default.");
+            tracing::warn!("LIBREDIRECT_URL non trovato, uso default.");
             DEFAULT_LIBREDIRECT_URL.to_string()
         });
 
         let farside_url = env::var("FARSIDE_URL").unwrap_or_else(|_| {
-            log::error!("FARSIDE_URL non trovato, uso default.");
+            tracing::warn!("FARSIDE_URL non trovato, uso default.");
             DEFAULT_FARSIDE_URL.to_string()
         });
 
         let ai_api_key = env::var("AI_API_KEY").ok().filter(|s| !s.is_empty());
         let ai_api_base = env::var("AI_API_BASE").unwrap_or_else(|_| {
-            log::error!("AI_API_BASE non trovato, uso default.");
+            tracing::warn!("AI_API_BASE non trovato, uso default.");
             DEFAULT_AI_API_BASE.to_string()
         });
         let ai_model = env::var("AI_MODEL").unwrap_or_else(|_| {
-            log::error!("AI_MODEL non trovato, uso default.");
+            tracing::warn!("AI_MODEL non trovato, uso default.");
             DEFAULT_AI_MODEL.to_string()
         });
         let inline_max_results = env::var("INLINE_MAX_RESULTS")
@@ -111,10 +130,6 @@ impl Config {
 
         let webhook_url = env::var("WEBHOOK_URL").ok().filter(|s| !s.is_empty());
         let webhook_secret = env::var("WEBHOOK_SECRET").ok().filter(|s| !s.is_empty());
-        let port: u16 = env::var("PORT")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(8080);
 
         Ok(Self {
             bot_token,
@@ -157,12 +172,16 @@ impl Config {
         }
 
         // Render Reserved Ports check
-        let reserved_ports = ["18012", "18013", "19099"];
-        for port in reserved_ports {
-            if self.server_addr.contains(port) {
+        let addr_port = self
+            .server_addr
+            .rsplit(':')
+            .next()
+            .and_then(|p| p.parse::<u16>().ok());
+        if let Some(p) = addr_port {
+            if RESERVED_PORTS.contains(&p) {
                 return Err(AppError::Config(format!(
                     "FATAL: La porta {} e' riservata da Render e non puo' essere usata.",
-                    port
+                    p
                 )));
             }
         }

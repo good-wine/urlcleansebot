@@ -1,320 +1,190 @@
-# ClearURLs Telegram Bot 🛡️
+# ClearURLs Telegram Bot
 
-[![Rust](https://img.shields.io/badge/rust-1.92+-orange.svg)](https://www.rust-lang.org)
+[![CI](https://github.com/good-wine/clearurlsbot/actions/workflows/ci.yml/badge.svg)](https://github.com/good-wine/clearurlsbot/actions/workflows/ci.yml)
+[![Rust](https://img.shields.io/badge/rust-1.88+-orange.svg)](https://www.rust-lang.org)
 [![Podman](https://img.shields.io/badge/Podman-supported-blue.svg)](https://podman.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A modern, high-performance Rust-based Telegram bot that automatically removes tracking parameters from URLs. Built with the latest Rust toolchain and optimized for Podman containerization.
+A modern, high-performance Rust-based Telegram bot that automatically removes tracking parameters from URLs.
 
-## ✨ What's New
+## Key Features
 
-**🚀 Major Modernization (v0.1.0+)**
+- **ClearURLs Rule Engine** — Downloads and applies the official ClearURLs ruleset to strip tracking parameters
+- **AI Deep Scan** (optional) — OpenAI-compatible API pass for complex tracking patterns
+- **Shortlink Expansion** — Follows redirects from bit.ly, tinyurl, etc. to uncover hidden trackers
+- **Alternative Frontends** — Auto-detects URLs from YouTube, Twitter, Reddit, etc. and suggests privacy-focused alternatives (Invidious, Piped, Libretto, Nitter, Teddit) via LibRedirect and Farside
+- **Security Scanning** — VirusTotal and URLScan.io integration for malware/reputation checks
+- **Multi-language** — 15 languages with auto-detection (IT, EN, ES, FR, DE, PT, RU, AR, HI, ZH, JA, KO, TR, NL, PL)
+- **Inline Mode** — Clean URLs directly from the inline query bar
+- **Group Support** — Per-chat configuration (Reply/Delete modes)
+- **Statistics & Leaderboards** — Personal stats, domain breakdowns, top users, trending links
+- **Feature Flags & Rate Limiting** — Database-level per-user feature control and abuse protection
 
-- ✅ Updated to Rust 1.92+ with optimized build configuration
-- ✅ Migrated from Docker to Podman for enhanced security
-- ✅ Fixed all deprecation warnings and modernized codebase
-- ✅ Optimized build times and runtime performance
-- ✅ Enhanced container security with rootless operation
-- ✅ **NEW**: VirusTotal integration for malware detection
-- ✅ **NEW**: URLScan.io integration for web reputation analysis
-
-## 📖 Documentation
-
-- **[Architecture Guide](docs/ARCHITECTURE.md)**: Deep dive into the modular structure and data flow
-- **[Deployment Guide](docs/DEPLOYMENT.md)**: Complete deployment instructions for all environments
-- **[VirusTotal Integration](docs/VIRUSTOTAL.md)**: 🆕 Malware detection setup and configuration
-- **[URLScan.io Integration](docs/URLSCAN.md)**: 🆕 Web reputation and behavioral analysis
-- **[Contributing](CONTRIBUTING.md)**: How to set up development and submit changes
-- **[Changelog](CHANGELOG.md)**: History of releases and updates
-
-## 🌟 Key Features
-
-- **Smart Language Detection**: Automatically detects and responds in English or Italian based on message context and user settings
-- **Multi-Language Support**: Full i18n support for Italian and English
-- **Dual Security Scanning**:
-  - **VirusTotal**: Real-time malware detection with 70+ antivirus engines
-  - **URLScan.io**: Behavioral analysis and web reputation scoring
-- **Granular Control**: Per-chat configuration (Reply/Delete modes) and custom tracking parameter removal
-- **AI Deep Scan**: Optional AI-powered sanitization for complex tracking parameters not covered by standard rules
-- **Shortlink Expansion**: Automatically follows redirects from services like bit.ly or tinyurl to uncover and strip underlying trackers
-- **Alternative Frontends**: Automatically detects URLs from popular services (YouTube, Twitter, Reddit, etc.) and suggests privacy-focused alternatives (Invidious, Piped, Nitter, Teddit, etc.)
-- **Deep Auditing**: Track which provider (Amazon, Google, etc.) cleaned each link
-- **Feature Flags System**: 🆕 Gradual rollout and per-user feature control
-- **Rate Limiting**: 🆕 Database-level protection against abuse
-- **Health Monitoring**: 🆕 Built-in health check endpoint for production monitoring
-- **HTTP Resilience**: 🆕 Retry with exponential backoff for all external API calls (VirusTotal, URLScan.io, AI services)
-- **Comprehensive Testing**: 🆕 Full test suite with 30+ test cases
-- **CI/CD Pipeline**: 🆕 Automated testing and deployment via GitHub Actions
-
-## 🤖 Bot Commands
-
-The bot supports the following commands (available in both English and Italian):
-
-### Core Commands
-- `/start` - Initialize the bot and get dashboard link
-- `/help` - Show comprehensive help with all available commands
-- `/menu` - Display quick reply keyboard for easy access
-- `/settings` - Open interactive settings menu
-
-### Statistics & Data
-- `/stats` - View your personal cleaning statistics
-- `/history` - Show last 10 cleaned URLs
-- `/domains` - Statistics grouped by domain
-- `/leaderboard` - Top 10 users by cleaned URLs
-- `/trending` - Most frequently cleaned URLs
-- `/export` - Export your data as JSON
-
-### Security & Management
-- `/whitelist` - Manage whitelisted domains
-- `/whitelist_add <domain>` - Add domain to whitelist
-- `/whitelist_remove <domain>` - Remove domain from whitelist
-- `/limits` - Check your current rate limits
-
-### Language & Interface
-- `/language` - Show current language and available options
-- `/setlang <it|en>` - Change bot language (Italian/English)
-- `/hidekbd` - Hide the reply keyboard
-
-### Administrative (Admin Only)
-
-Admin commands are available through the interactive settings menu (`/settings`):
-
-- **User Management**: View and manage bot users
-- **System Settings**: View system configuration and status
-- **Global Statistics**: Access comprehensive bot usage statistics
-- **Maintenance**: Database maintenance and cleanup operations
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- **Rust 1.92+** (minimum 1.75 supported)
-- **Podman** (recommended for deployment)
-- **PostgreSQL or SQLite** for database
+## Quick Start
 
 ### 1. Clone & Configure
 
 ```bash
-git clone https://github.com/yourusername/clear_urls_bot.git
-cd clear_urls_bot
+git clone https://github.com/good-wine/clearurlsbot.git
+cd clearurlsbot
 cp .env.example .env
 ```
 
 Edit `.env` with your settings:
 
-```bash
+```ini
 TELOXIDE_TOKEN=your_bot_token
 BOT_USERNAME=@your_bot_username
 ADMIN_ID=your_telegram_user_id
 
-# Optional: override bind address in webhook mode
-#SERVER_ADDR=0.0.0.0:8080
-
-# Optional for AI Deep Scan
-AI_API_KEY=your_ai_api_key
-AI_API_BASE=https://api.openai.com/v1
-AI_MODEL=gpt-4
-
-# Optional: VirusTotal integration for malware detection
-# Get your free API key at: https://www.virustotal.com/gui/my-apikey
-# Free tier: 4 requests/minute, 500/day, 15,500/month
-VIRUSTOTAL_API_KEY=your_virustotal_api_key
-# Send messages only for suspicious/malicious URLs (default: true)
-VIRUSTOTAL_ALERT_ONLY=true
-
-# Optional: URLScan.io integration for web reputation analysis
-# Get API key: https://urlscan.io/user/signup
-# Behavioral analysis with private scans
-URLSCAN_API_KEY=your_urlscan_api_key
-# Send messages only for suspicious/malicious URLs (default: true)
-URLSCAN_ALERT_ONLY=true
-
-# Optional: max inline results returned by Telegram inline mode (default: 5)
-INLINE_MAX_RESULTS=5
-
-# Optional: Custom URLs for external services (advanced users)
-# Default URLs are production endpoints, change only if you know what you're doing
-LIBREDIRECT_URL=https://raw.githubusercontent.com/libredirect/instances/main/data.json
-FARSIDE_URL=https://raw.githubusercontent.com/benbusby/farside/refs/heads/main/services-full.json
-CLEARURLS_SOURCE=https://raw.githubusercontent.com/ClearURLs/Rules/refs/heads/master/data.min.json
+# Optional
+AI_API_KEY=your_openai_key
+VIRUSTOTAL_API_KEY=your_vt_key
+URLSCAN_API_KEY=your_urlscan_key
+WEBHOOK_URL=https://your-domain.com/webhook
+WEBHOOK_SECRET=your_secret
 ```
 
-### 2. Run Locally
+### 2. Run
 
 ```bash
-# Development build
-cargo run
-
-# Optimized release build
-cargo run --release
+cargo run              # development
+cargo run --release    # production
 ```
 
-### 3. Deploy with Podman (Recommended)
+### 3. Deploy with Podman
 
 ```bash
-# Using the deployment script (recommended)
 ./podman-deploy.sh start
-
-# Or with podman-compose
+# or
 podman-compose -f podman-compose.yml up
-
-# Or manually
-podman build -t clear_urls_bot -f Containerfile .
-podman run -d --name clear_urls_bot --pod clear_urls_bot_pod -p 3000:3000 --env-file .env clear_urls_bot
 ```
 
-## 🚀 Funzionalità Avanzate
+## Bot Commands
 
-### 🛡️ Security Scanning
+| Command | Description |
+|---------|-------------|
+| `/start` | Initialize the bot |
+| `/help` | Show help |
+| `/menu` | Quick reply keyboard |
+| `/settings` | Interactive settings menu |
+| `/stats` | Personal statistics |
+| `/history` | Last 10 cleaned URLs |
+| `/domains` | Stats grouped by domain |
+| `/leaderboard` | Top 10 users |
+| `/trending` | Most frequently cleaned URLs |
+| `/export` | Export data as JSON |
+| `/whitelist` | Manage whitelisted domains |
+| `/limits` | Check rate limits |
+| `/language` | Show available languages |
+| `/setlang <code>` | Change language (it, en, es, fr, de, pt, ru, ar, hi, zh, ja, ko, tr, nl, pl) |
+| `/hidekbd` | Hide reply keyboard |
 
-- **VirusTotal Security**: Automatic malware detection before URL cleaning ([docs](docs/VIRUSTOTAL.md))
-  - Real-time scanning with 70+ antivirus engines
-  - Detailed threat alerts with detection statistics
-  - Alert-only mode (default) - notifications only for threats
-  - Free tier: 4 requests/minute, 500/day, 15,500/month
-  
-- **URLScan.io Analysis**: Behavioral web reputation scanning ([docs](docs/URLSCAN.md))
-  - Sandbox-based page analysis with screenshot capture
-  - Risk scoring (0-100) and malicious classification
-  - Private scans - your URLs stay confidential
-  - Alert-only mode (default) - notifications only for threats
-  - Phishing and dynamic content detection
+## Architecture
 
-### 📊 Statistics & Administration
+The codebase follows a layered structure:
 
-- Statistiche globali e ranking utenti: /topusers, /toplinks
-- Supporto multi-lingua: /language, /setlang <codice>
-- Modalità privacy: /privacy per attivare/disattivare salvataggio cronologia
-- Logging avanzato: solo admin riceve log critici via Telegram
-- Notifiche automatiche errori: messaggio all'admin in caso di panic/errori
+```
+src/
+├── presentation/telegram/   # Telegram handlers, UI helpers, settings, security scans
+├── sanitizer/               # URL cleaning engine (RuleEngine, AiEngine)
+├── redirects/               # Alternative frontend detection (LibRedirect, Farside)
+├── db/                      # Database layer (SQLite/PostgreSQL via sqlx::Any)
+├── application/             # Clean Architecture skeleton (commands, queries, services)
+├── domain/                  # Business entities and repository interfaces
+├── infrastructure/          # Repository implementations
+├── shared/                  # Cross-cutting: error types, security utils, types
+├── config.rs                # Environment-based configuration
+├── health.rs                # Health check structs
+├── http_utils.rs            # HTTP retry with exponential backoff
+├── i18n.rs                  # Internationalization (15 languages)
+├── logging.rs               # Structured logging setup
+└── main.rs                  # Orchestrator (~50 lines)
+```
 
-### 🔧 Performance & Reliability
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full overview and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the deep dive.
 
-- Backup automatico DB: script backup_db.sh, cron consigliato
-- Caching risultati pulizia: cache interna per URL ripetuti
-- Ottimizzazione DB/async: query asincrone, pooling, batch
-- Webhook HTTPS: supportato nativamente, attivabile con `WEBHOOK_URL` + `WEBHOOK_SECRET`
-- Frontend alternativi automatici: rileva automaticamente URL da YouTube, Twitter, Reddit, ecc. e suggerisce alternative privacy-focused (Invidious, Piped, Nitter, Teddit, …) da LibRedirect e Farside, con cache TTL 6h
+## Supported Languages
 
-## 🛡️ Sicurezza e Best Practice
+| Code | Language | Native Name |
+|------|----------|-------------|
+| `it` | Italian | Italiano |
+| `en` | English | English |
+| `es` | Spanish | Español |
+| `fr` | French | Français |
+| `de` | German | Deutsch |
+| `pt` | Portuguese | Português |
+| `ru` | Russian | Русский |
+| `ar` | Arabic | العربية |
+| `hi` | Hindi | हिन्दी |
+| `zh` | Chinese | 中文 |
+| `ja` | Japanese | 日本語 |
+| `ko` | Korean | 한국어 |
+| `tr` | Turkish | Türkçe |
+| `nl` | Dutch | Nederlands |
+| `pl` | Polish | Polski |
 
-### Sicurezza
-- **Rate Limiting**: Anti-flood protection (max 1 request/second per user)
-- **Input Validation**: Sanitization of all messages and callbacks
-- **Permission Control**: Systematic admin permission checks
-- **Data Protection**: Sensitive data protection in logs and environment variables
-- **Container Security**: Recommended rootless Podman execution with PostgreSQL in production
+Languages are auto-detected from message content or Telegram client settings, and can be manually set via `/setlang <code>` or the settings menu.
 
-### Performance & Reliability
-- **Database Optimization**: Asynchronous queries, connection pooling, batch operations
-- **Caching**: Internal cache for repeated URL cleaning results
-- **Automatic Backup**: Database backup script (`backup_db.sh`) with cron scheduling
-- **Webhook Support**: Native HTTPS webhook support with `WEBHOOK_URL` + `WEBHOOK_SECRET`
-- **HTTP Resilience**: Retry with exponential backoff for all external API calls
-- **Alternative Frontends**: Automatic detection of URLs from YouTube, Twitter, Reddit, etc. with privacy-focused alternatives (Invidious, Piped, Nitter, Teddit, ...) from LibRedirect and Farside with 6h TTL cache
+See [LANGUAGES.md](LANGUAGES.md) for the full translation guide.
 
-### Monitoring & Administration
-- **Advanced Logging**: Critical logs sent only to admin via Telegram
-- **Error Notifications**: Automatic admin messages for panics/errors
-- **Health Monitoring**: Built-in health check endpoint for production monitoring
-- **Admin Panel**: Interactive admin interface for user management, system settings, and maintenance
+## Documentation
 
-## 🏗️ Technical Architecture
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | High-level architecture overview |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Detailed architecture deep dive |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Deployment guides |
+| [docs/VIRUSTOTAL.md](docs/VIRUSTOTAL.md) | VirusTotal integration |
+| [docs/URLSCAN.md](docs/URLSCAN.md) | URLScan.io integration |
+| [docs/SCAN_CACHING.md](docs/SCAN_CACHING.md) | Security scan caching |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
+| [QUICK_START.md](QUICK_START.md) | Step-by-step setup guide (Italian) |
+| [LANGUAGES.md](LANGUAGES.md) | Supported languages & translation guide |
+| [SECURITY.md](SECURITY.md) | Security policy |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
+| [COMPILATION_GUIDE.md](COMPILATION_GUIDE.md) | Build optimization guide |
 
-### Core Technologies
-
-- **Language**: Rust 2021 Edition (MSRV 1.75+, tested on 1.92)
-- **Bot Framework**: Teloxide 0.17 with modern async patterns
-- **Database**: sqlx 0.8 with SQLite/PostgreSQL support
-- **Caching**: Moka 0.12 for high-performance caching
-- **Observability**: Comprehensive tracing with structured logging
-
-### Performance Optimizations
-
-- **Build**: Optimized LTO, single codegen unit, panic=abort for releases
-- **Runtime**: Async I/O, connection pooling, efficient caching strategies
-- **Memory**: Zero-copy patterns where possible, minimal allocations
-
-### Security Features
-
-- **Containerless**: Rootless Podman operation by default
-- **Least Privilege**: Non-root container execution
-- **Secure Defaults**: TLS-only, secure cookie handling, input validation
-
-## 🔒 Security Best Practices
-
-- Tutti gli input utente sono validati e sanificati lato bot.
-- Rate limiting anti-flood: massimo 1 richiesta/secondo per utente.
-- Le azioni amministrative sono protette da controllo su `ADMIN_ID`.
-- Nessun dato sensibile (token, chiavi, dati personali) viene mai loggato.
-- Le variabili di ambiente `.env` devono avere permessi restrittivi (`chmod 600 .env`).
-- I log oscurano dati sensibili tramite redazione automatica.
-- Consigliato eseguire il bot in container rootless (Podman) e usare database PostgreSQL in produzione.
-
-## 🔧 Development
+## Development
 
 ```bash
-# Install dependencies
-cargo build
-
-# Run tests
-cargo test
-
-# Check code quality
-cargo clippy --all-targets
-cargo fmt --check
-
-# Build release (optimized)
-cargo build --release
-
-# Local development with auto-reload
-cargo install cargo-watch
-cargo watch -x run
+cargo check              # compile check
+cargo clippy --all-targets -- -D warnings   # lint
+cargo test               # run all tests (72 total)
+cargo fmt --all          # format
 ```
 
-## 📊 Monitoring & Observability
+### Test Structure
 
-The bot includes comprehensive observability:
+- **45 unit tests** — sanitizer, redirects, security, helpers, health
+- **8 bot command tests** — integration tests with in-memory SQLite
+- **10 database tests** — user configs, history, whitelist, feature flags
+- **9 sanitizer tests** — real ClearURLs rules fetching and URL cleaning
 
-```bash
-# View logs
-podman logs -f clear_urls_bot
+All tests use isolated in-memory SQLite databases and run in parallel.
 
-# Check container status
-./podman-deploy.sh status
+## Environment Variables
 
-# Monitor resource usage
-podman stats clear_urls_bot
-```
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `TELOXIDE_TOKEN` | Yes | — | Telegram bot token |
+| `BOT_USERNAME` | Yes | — | Bot username (with or without @) |
+| `ADMIN_ID` | No | `0` | Admin Telegram user ID |
+| `DATABASE_URL` | No | `sqlite:bot.db` | SQLite or PostgreSQL connection |
+| `PORT` | No | `8080` | Webhook server port |
+| `SERVER_ADDR` | No | `0.0.0.0:{PORT}` | Bind address |
+| `CLEARURLS_SOURCE` | No | [official rules](https://raw.githubusercontent.com/ClearURLs/Rules/refs/heads/master/data.min.json) | ClearURLs rules URL |
+| `LIBREDIRECT_URL` | No | [libredirect instances](https://raw.githubusercontent.com/libredirect/instances/main/data.json) | LibRedirect catalog |
+| `FARSIDE_URL` | No | [farside services](https://raw.githubusercontent.com/benbusby/farside/refs/heads/main/services-full.json) | Farside catalog |
+| `AI_API_KEY` | No | — | OpenAI-compatible API key |
+| `AI_API_BASE` | No | `https://api.openai.com/v1` | AI API base URL |
+| `AI_MODEL` | No | `gpt-3.5-turbo` | AI model name |
+| `INLINE_MAX_RESULTS` | No | `5` | Max inline results (1-50) |
+| `VIRUSTOTAL_API_KEY` | No | — | VirusTotal API key |
+| `URLSCAN_API_KEY` | No | — | URLScan.io API key |
+| `WEBHOOK_URL` | No | — | Public HTTPS webhook URL |
+| `WEBHOOK_SECRET` | Conditional | — | Required if WEBHOOK_URL set |
 
-## 🐳 Container Details
+## License
 
-- **Base Image**: debian:bookworm-slim (production)
-- **Multi-stage**: Optimized build with minimal runtime footprint
-- **Size**: ~80MB compressed, ~200MB uncompressed
-- **Security**: Non-root user, SELinux labeling, read-only filesystem where possible
-
-## 📦 Deployment & Backup
-
-- Backup automatico DB: script backup_db.sh, cron consigliato
-- Esempio cron:
-  - 0 2 ** * /workspaces/clearurlsbot/backup_db.sh
-- Oppure manuale: ./backup_db.sh
-
-## 📝 License
-
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## 🤝 Contributing
-
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
----
-
-**Note**: This bot has undergone significant modernization with improved performance, security, and maintainability. See the [CHANGELOG](CHANGELOG.md) for detailed updates.
-
-## 🌍 Multi-lingua
-
-- Comando /language per mostrare lingue disponibili
-- Comando /setlang <codice> per cambiare lingua
-- Struttura pronta per aggiungere altre lingue
+MIT — see [LICENSE](LICENSE).

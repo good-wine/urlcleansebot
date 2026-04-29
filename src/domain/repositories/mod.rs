@@ -19,27 +19,27 @@ pub trait UserRepository: Send + Sync {
 /// Repository for URL cleaning history.
 #[async_trait]
 pub trait UrlHistoryRepository: Send + Sync {
-    /// Save URL history.
+    /// Save URL history entry.
     async fn save_url_history(&self, history: &UrlHistory) -> Result<()>;
 
-    /// Get user history.
+    /// Get user history, ordered by most recent first.
     async fn get_user_history(&self, user_id: i64, limit: usize) -> Result<Vec<UrlHistory>>;
 }
 
 /// Repository for whitelist operations.
 #[async_trait]
 pub trait WhitelistRepository: Send + Sync {
-    /// Add domain to whitelist.
-    async fn add_to_whitelist(&self, domain: &str) -> Result<()>;
+    /// Add domain to user's whitelist.
+    async fn add_to_whitelist(&self, user_id: i64, domain: &str) -> Result<()>;
 
-    /// Remove domain from whitelist.
-    async fn remove_from_whitelist(&self, domain: &str) -> Result<()>;
+    /// Remove domain from user's whitelist.
+    async fn remove_from_whitelist(&self, user_id: i64, domain: &str) -> Result<()>;
 
-    /// Get all whitelisted domains.
-    async fn get_whitelist(&self) -> Result<Vec<String>>;
+    /// Get all whitelisted domains for a user.
+    async fn get_whitelist(&self, user_id: i64) -> Result<Vec<String>>;
 
-    /// Check if domain is whitelisted.
-    async fn is_whitelisted(&self, domain: &str) -> Result<bool>;
+    /// Check if domain is whitelisted by a specific user.
+    async fn is_whitelisted(&self, user_id: i64, domain: &str) -> Result<bool>;
 }
 
 /// Repository for statistics.

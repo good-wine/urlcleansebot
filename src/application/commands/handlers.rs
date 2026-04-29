@@ -125,6 +125,7 @@ impl CleanUrlCommandHandler for CleanUrlCommandHandlerImpl {
             user_id: command.user_id,
             original_url,
             cleaned_url,
+            provider_name: None,
             timestamp: chrono::Utc::now(),
         };
 
@@ -193,12 +194,12 @@ impl ManageWhitelistCommandHandler for ManageWhitelistCommandHandlerImpl {
         match command.action {
             WhitelistAction::Add => {
                 self.whitelist_repository
-                    .add_to_whitelist(&command.domain)
+                    .add_to_whitelist(command.user_id, &command.domain)
                     .await
             }
             WhitelistAction::Remove => {
                 self.whitelist_repository
-                    .remove_from_whitelist(&command.domain)
+                    .remove_from_whitelist(command.user_id, &command.domain)
                     .await
             }
         }

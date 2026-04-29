@@ -3,10 +3,9 @@
 //! Two upstream JSON formats are supported:
 //!
 //! * **LibRedirect** (`https://raw.githubusercontent.com/libredirect/instances/main/data.json`)
-//!   — a map keyed by service slug, where each service exposes one map of
-//!   `network kind → list of instance URLs`.
+//!   — a flat map of frontend names to their instance URLs grouped by network type.
 //! * **Farside** (`https://raw.githubusercontent.com/benbusby/farside/refs/heads/main/services-full.json`)
-//!   — an array of services, each with a `type` (e.g. `youtube`) and a list of
+//!   — an array of services, each with a `type` (e.g. `invidious`) and a list of
 //!   instance URLs.
 //!
 //! Both upstream shapes are normalised to a single internal type
@@ -58,26 +57,17 @@ pub struct LookupHit {
 }
 
 // ---------------------------------------------------------------------------
-// LibRedirect upstream shape (deserialized lazily — fields we don't need are
-// flattened away with `#[serde(default)]`).
+// LibRedirect upstream shape (new flat format).
+//
+// The upstream no longer provides `targets` (domain → service mapping).
+// Format: `{ "<frontend_name>": { "clearnet": [...], "tor": [...], ... } }`
 // ---------------------------------------------------------------------------
 
-/// Raw LibRedirect document: `{ "<service>": { ... } }`.
-pub(crate) type LibRedirectDoc = BTreeMap<String, LibRedirectService>;
+/// Raw LibRedirect document: `{ "<frontend_name>": { clearnet, tor, i2p, loki } }`.
+pub(crate) type LibRedirectDoc = BTreeMap<String, LibRedirectFrontend>;
 
 #[derive(Debug, Deserialize, Default, Clone)]
-pub(crate) struct LibRedirectService {
-    /// `{ "<frontend kind>": { "clearnet": [ "https://..." ], ... } }`
-    #[serde(default)]
-    pub instances: BTreeMap<String, LibRedirectInstanceSet>,
-    /// Domains the service replaces (e.g. `["youtube.com", "youtu.be"]`).
-    /// Some entries omit this list, hence the default.
-    #[serde(default, rename = "targets")]
-    pub targets: Vec<String>,
-}
-
-#[derive(Debug, Deserialize, Default, Clone)]
-pub(crate) struct LibRedirectInstanceSet {
+pub(crate) struct LibRedirectFrontend {
     #[serde(default)]
     pub clearnet: Vec<String>,
     // tor / i2p / loki are intentionally ignored — not useful for
@@ -103,37 +93,32 @@ mod tests {
     #[test]
     fn parse_libredirect_minimal() {
         let raw = r#"{
-            "youtube": {
-                "targets": ["youtube.com", "youtu.be"],
-                "instances": {
-                    "invidious": { "clearnet": ["https://yewtu.be"] },
-                    "piped":     { "clearnet": ["https://piped.video"] }
-                }
-            }
+            "invidious": { "clearnet": ["https://yewtu.be"] },
+            "piped":     { "clearnet": ["https://piped.video"] }
         }"#;
         let parsed: LibRedirectDoc = serde_json::from_str(raw).unwrap();
-        let yt = parsed.get("youtube").expect("youtube entry");
-        assert_eq!(yt.targets, vec!["youtube.com", "youtu.be"]);
-        assert_eq!(yt.instances.len(), 2);
+        assert_eq!(parsed.len(), 2);
         assert_eq!(
-            yt.instances["invidious"].clearnet,
+            parsed["invidious"].clearnet,
             vec!["https://yewtu.be".to_string()]
+        );
+        assert_eq!(
+            parsed["piped"].clearnet,
+            vec!["https://piped.video".to_string()]
         );
     }
 
     #[test]
     fn parse_libredirect_skips_unknown_fields() {
-        // Real upstream documents include many extra keys; deserialization must
-        // not fail on unknowns.
         let raw = r#"{
-            "x": {
-                "name": "X",
-                "embeddable": true,
-                "instances": { "nitter": { "clearnet": ["https://nitter.net"], "tor": ["x"] } }
-            }
+            "nitter": { "clearnet": ["https://nitter.net"], "tor": ["x"], "i2p": [], "loki": [] }
         }"#;
         let parsed: LibRedirectDoc = serde_json::from_str(raw).unwrap();
-        assert!(parsed.contains_key("x"));
+        assert!(parsed.contains_key("nitter"));
+        assert_eq!(
+            parsed["nitter"].clearnet,
+            vec!["https://nitter.net".to_string()]
+        );
     }
 
     #[test]

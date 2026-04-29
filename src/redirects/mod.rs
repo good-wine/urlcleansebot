@@ -19,7 +19,10 @@ mod models;
 mod service;
 
 pub use models::{Frontend, FrontendSource, LookupHit};
-pub use service::{extract_host, format_hit_html, RedirectService, FARSIDE_URL, LIBREDIRECT_URL};
+pub use service::{
+    build_frontend_url, extract_host, format_hit_html, RedirectService, FARSIDE_URL,
+    LIBREDIRECT_URL,
+};
 
 #[cfg(test)]
 pub use cache::SingleEntryCache;

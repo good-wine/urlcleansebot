@@ -22,12 +22,14 @@ mod command_tests {
         let db = setup_test_db().await;
         let user_id = 12345;
 
+        // Ensure user config exists
+        db.get_user_config(user_id).await.unwrap();
         // Simulate some activity
-        db.increment_link_count(user_id).await.unwrap();
-        db.increment_link_count(user_id).await.unwrap();
+        db.increment_cleaned_count(user_id, 1).await.unwrap();
+        db.increment_cleaned_count(user_id, 1).await.unwrap();
 
-        let stats = db.get_user_stats(user_id).await.unwrap();
-        assert_eq!(stats.total_links, 2);
+        let config = db.get_user_config(user_id).await.unwrap();
+        assert_eq!(config.cleaned_count, 2);
     }
 
     #[tokio::test]
@@ -58,7 +60,10 @@ mod command_tests {
         for i in 1..=5 {
             let original = format!("https://example.com?utm_source={}", i);
             let cleaned = "https://example.com";
-            db.add_to_history(user_id, &original, cleaned, "RegexRules").await.unwrap();
+            let provider_name = "RegexRules";
+            db.log_cleaned_link(user_id, &original, cleaned, provider_name)
+                .await
+                .unwrap();
         }
 
         // Get history
@@ -72,7 +77,14 @@ mod command_tests {
         let user_id = 12345;
 
         // Add history for export
-        db.add_to_history(user_id, "https://example.com?track=1", "https://example.com", "RegexRules").await.unwrap();
+        db.log_cleaned_link(
+            user_id,
+            "https://example.com?track=1",
+            "https://example.com",
+            "RegexRules",
+        )
+        .await
+        .unwrap();
 
         let history = db.get_history(user_id, 50).await.unwrap();
         assert!(!history.is_empty());
@@ -88,14 +100,16 @@ mod command_tests {
 
         // Create test users
         for user_id in 1..=10 {
+            // Ensure user config exists
+            db.get_user_config(user_id).await.unwrap();
             for _ in 0..user_id {
-                db.increment_link_count(user_id).await.unwrap();
+                db.increment_cleaned_count(user_id, 1).await.unwrap();
             }
         }
 
         // Get top 5
         let top_users = db.get_top_users(5).await.unwrap();
         assert_eq!(top_users.len(), 5);
-        assert!(top_users[0].total_links >= top_users[4].total_links);
+        assert!(top_users[0].1 >= top_users[4].1); // Access cleaned_count via tuple index
     }
 }

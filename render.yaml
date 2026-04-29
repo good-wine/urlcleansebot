@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: clearurlsbot
+    runtime: rust
+    plan: free
+    region: oregon
+    buildCommand: cargo build --release --locked
+    startCommand: ./target/release/clear_urls_bot
+    healthCheckPath: /health
+    envVars:
+      - key: TELOXIDE_TOKEN
+        sync: false
+      - key: BOT_USERNAME
+        sync: false
+      - key: ADMIN_ID
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: PORT
+        value: 8080
+      - key: RUST_LOG
+        value: info

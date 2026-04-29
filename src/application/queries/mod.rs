@@ -28,9 +28,11 @@ pub trait GetGlobalStatisticsQueryHandler: Send + Sync {
 
 /// Query for whitelisted domains.
 #[derive(Debug)]
-pub struct GetWhitelistQuery;
+pub struct GetWhitelistQuery {
+    pub user_id: i64,
+}
 
 #[async_trait::async_trait]
 pub trait GetWhitelistQueryHandler: Send + Sync {
-    async fn handle(&self, _query: GetWhitelistQuery) -> anyhow::Result<Vec<String>>;
+    async fn handle(&self, query: GetWhitelistQuery) -> anyhow::Result<Vec<String>>;
 }

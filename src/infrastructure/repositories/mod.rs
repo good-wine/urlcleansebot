@@ -85,11 +85,13 @@ impl PostgresUrlHistoryRepository {
 impl UrlHistoryRepository for PostgresUrlHistoryRepository {
     async fn save_url_history(&self, history: &UrlHistory) -> Result<()> {
         sqlx::query(
-            "INSERT INTO url_history (user_id, original_url, cleaned_url, timestamp) VALUES ($1, $2, $3, $4)"
+            "INSERT INTO url_history (user_id, original_url, cleaned_url, provider_name, timestamp) \
+             VALUES ($1, $2, $3, $4, $5)",
         )
         .bind(history.user_id)
         .bind(&history.original_url)
         .bind(&history.cleaned_url)
+        .bind(&history.provider_name)
         .bind(history.timestamp.to_rfc3339())
         .execute(&self.pool)
         .await?;
@@ -99,7 +101,7 @@ impl UrlHistoryRepository for PostgresUrlHistoryRepository {
 
     async fn get_user_history(&self, user_id: i64, limit: usize) -> Result<Vec<UrlHistory>> {
         let rows = sqlx::query(
-            "SELECT user_id, original_url, cleaned_url, timestamp FROM url_history
+            "SELECT user_id, original_url, cleaned_url, provider_name, timestamp FROM url_history
              WHERE user_id = $1 ORDER BY timestamp DESC LIMIT $2",
         )
         .bind(user_id)
@@ -113,7 +115,11 @@ impl UrlHistoryRepository for PostgresUrlHistoryRepository {
                 user_id: row.get("user_id"),
                 original_url: row.get("original_url"),
                 cleaned_url: row.get("cleaned_url"),
-                timestamp: chrono::DateTime::parse_from_rfc3339(&row.get::<String, _>("timestamp"))?.with_timezone(&Utc),
+                provider_name: row.get("provider_name"),
+                timestamp: chrono::DateTime::parse_from_rfc3339(
+                    &row.get::<String, _>("timestamp"),
+                )?
+                .with_timezone(&Utc),
             });
         }
 
@@ -134,8 +140,21 @@ impl PostgresWhitelistRepository {
 
 #[async_trait]
 impl WhitelistRepository for PostgresWhitelistRepository {
-    async fn add_to_whitelist(&self, domain: &str) -> Result<()> {
-        sqlx::query("INSERT INTO whitelist (domain) VALUES ($1) ON CONFLICT DO NOTHING")
+    async fn add_to_whitelist(&self, user_id: i64, domain: &str) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO user_whitelist (user_id, domain) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        )
+        .bind(user_id)
+        .bind(domain)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn remove_from_whitelist(&self, user_id: i64, domain: &str) -> Result<()> {
+        sqlx::query("DELETE FROM user_whitelist WHERE user_id = $1 AND domain = $2")
+            .bind(user_id)
             .bind(domain)
             .execute(&self.pool)
             .await?;
@@ -143,28 +162,24 @@ impl WhitelistRepository for PostgresWhitelistRepository {
         Ok(())
     }
 
-    async fn remove_from_whitelist(&self, domain: &str) -> Result<()> {
-        sqlx::query("DELETE FROM whitelist WHERE domain = $1")
-            .bind(domain)
-            .execute(&self.pool)
-            .await?;
-
-        Ok(())
-    }
-
-    async fn get_whitelist(&self) -> Result<Vec<String>> {
-        let rows = sqlx::query("SELECT domain FROM whitelist ORDER BY domain")
-            .fetch_all(&self.pool)
-            .await?;
+    async fn get_whitelist(&self, user_id: i64) -> Result<Vec<String>> {
+        let rows =
+            sqlx::query("SELECT domain FROM user_whitelist WHERE user_id = $1 ORDER BY domain")
+                .bind(user_id)
+                .fetch_all(&self.pool)
+                .await?;
 
         Ok(rows.into_iter().map(|row| row.get("domain")).collect())
     }
 
-    async fn is_whitelisted(&self, domain: &str) -> Result<bool> {
-        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM whitelist WHERE domain = $1")
-            .bind(domain)
-            .fetch_one(&self.pool)
-            .await?;
+    async fn is_whitelisted(&self, user_id: i64, domain: &str) -> Result<bool> {
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM user_whitelist WHERE user_id = $1 AND domain = $2",
+        )
+        .bind(user_id)
+        .bind(domain)
+        .fetch_one(&self.pool)
+        .await?;
 
         Ok(count.0 > 0)
     }

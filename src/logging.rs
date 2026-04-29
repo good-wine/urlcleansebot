@@ -32,29 +32,3 @@ pub fn init_logging() {
 
     tracing::info!(env = %env, "Sistema di logging inizializzato");
 }
-
-/// Debugging utility for tracking execution time of a block/future.
-pub struct Timer {
-    label: &'static str,
-    start: std::time::Instant,
-}
-
-impl Timer {
-    pub fn new(label: &'static str) -> Self {
-        Self {
-            label,
-            start: std::time::Instant::now(),
-        }
-    }
-}
-
-impl Drop for Timer {
-    fn drop(&mut self) {
-        let duration = self.start.elapsed();
-        tracing::debug!(
-            label = %self.label,
-            duration_ms = %duration.as_millis(),
-            "Operazione completata"
-        );
-    }
-}

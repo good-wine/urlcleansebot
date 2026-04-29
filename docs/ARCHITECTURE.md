@@ -1,249 +1,219 @@
-# Architecture Overview 🏗️
+# Architecture Overview
 
-This project is designed with modularity, performance, and security in mind, supporting both containerized and local deployments with modern Rust practices and Podman optimization.
+This project is designed with modularity, performance, and security in mind.
 
-## 📦 Component Structure
+## Component Structure
 
 ### 1. Core Library (`src/lib.rs`)
 
-Il progetto è ora ancora più modulare e robusto:
+Public modules exposed by the library crate:
 
-- **Sanitizer Module** (`src/sanitizer/`):
-  - `rule_engine.rs`: Motore regex per la pulizia URL e redazione dati sensibili
-  - `ai_engine.rs`: Analisi AI per parametri complessi
-  - `validation.rs`: Validazione input/output con cache
-- **Database Module** (`src/db/`):
-  - `implementation.rs`: Layer di astrazione DB con sqlx
-  - `models.rs`: Modelli dati con supporto lingua
-- **Bot Module** (`src/bot.rs`):
-  - Handler Telegram moderno, gestione errori migliorata
-- **Configurazione** (`src/config.rs`):
-  - Gestione errori esplicita, logging avanzato
-- **Internazionalizzazione** (`src/i18n.rs`):
-  - Supporto multilingua estendibile via file JSON
-  - Rilevamento lingua contestuale
-  - Caricamento dinamico traduzioni
+- **`presentation::telegram`** — Telegram bot handlers, UI helpers, settings navigation, security scans
+- **`sanitizer`** — URL cleaning engine
+  - `rule_engine.rs` — ClearURLs rules parser, regex-based cleaning, GitHub URL handling, aggressive tracker removal
+  - `ai_engine.rs` — Optional OpenAI-compatible API for complex tracking patterns
+  - `validation.rs` — URL validation with in-memory caching
+- **`redirects`** — Alternative frontend detection
+  - `service.rs` — LibRedirect + Farside catalog lookup with host extraction
+  - `models.rs` — Frontend data structures with serde deserialization
+  - `cache.rs` — TTL-based catalog cache (moka)
+- **`db`** — Database abstraction layer
+  - `implementation.rs` — `Db` struct with all SQL operations (SQLite/PostgreSQL via `sqlx::Any`)
+  - `models.rs` — Data models: `UserConfig`, `ChatConfig`, `CleanedLink`, `CustomRule`
+- **`application`** — Clean Architecture use cases (preserved for future refactoring)
+- **`domain`** — Business entities and repository interfaces
+- **`infrastructure`** — Repository implementations
+- **`shared`** — Cross-cutting concerns: `AppError`, security utilities, shared types
+- **`config`** — Environment-based configuration loading and validation
+- **`health`** — Health check structs (healthy/unhealthy/degraded)
+- **`http_utils`** — HTTP retry with exponential backoff for external APIs
+- **`i18n`** — Internationalization: 15 languages (IT, EN, ES, FR, DE, PT, RU, AR, HI, ZH, JA, KO, TR, NL, PL) with auto-detection
+- **`logging`** — Structured logging setup with `tracing`
 
 ### 2. Application Entry Point (`src/main.rs`)
 
-Optimized initialization sequence:
+Minimal orchestrator (~50 lines):
 
-1. Configuration loading and validation
-2. Database initialization with migrations
-3. Cache setup (Moka for performance)
-4. Bot service startup with graceful shutdown handling
+1. Initialize structured logging
+2. Load and validate configuration from environment variables
+3. Initialize database (SQLite or PostgreSQL)
+4. Create `RuleEngine` (lazy, fetches rules on first use) and `AiEngine`
+5. Create broadcast channel for events
+6. Start the bot via `run_bot()`
 
-### 3. Module Organization (`src/`)
+### 3. Module Organization
 
 ```
 src/
-├── lib.rs              # Library crate definition
-├── main.rs             # Application entry point
-├── bot.rs              # Telegram bot logic
+├── lib.rs              # Library crate — module declarations
+├── main.rs             # Application entry point (orchestrator)
 ├── config.rs           # Configuration management
-├── i18n.rs            # Internationalization
-├── db/                 # Database layer
-│   ├── mod.rs
-│   ├── implementation.rs
-│   └── models.rs
-└── sanitizer/          # URL processing engines
-    ├── mod.rs
-    ├── rule_engine.rs
-    └── ai_engine.rs
+├── health.rs           # Health check types
+├── http_utils.rs       # HTTP retry utilities
+├── i18n.rs             # Internationalization (15 languages)
+├── logging.rs          # Structured logging
+├── presentation/       # User interface layer
+│   └── telegram/       # Telegram-specific code
+│       ├── handlers.rs       # Message/callback/inline dispatching
+│       ├── helpers.rs        # Keyboards, UI, URL extraction, 13 tests
+│       ├── settings.rs       # Settings callback navigation
+│       ├── security_scan.rs  # VirusTotal + URLScan.io
+│       └── mod.rs            # Exports run_bot()
+├── application/        # Clean Architecture use cases
+│   ├── commands/       # Command traits and handlers
+│   ├── queries/        # Query traits and handlers
+│   └── services/       # Service trait definitions
+├── domain/             # Business entities and repository interfaces
+│   ├── entities/       # User, ChatConfig, UrlToClean, etc.
+│   └── repositories/   # Repository trait definitions
+├── infrastructure/     # External implementations
+│   └── repositories/   # Database repository implementations
+├── shared/             # Cross-cutting concerns
+│   ├── error.rs        # AppError, AppResult
+│   ├── security.rs     # Rate limiter, sanitization, validation
+│   └── types.rs        # Shared types
+├── sanitizer/          # URL sanitization engine
+├── redirects/          # Alternative frontend detection
+└── db/                 # Database layer
 ```
 
-## 🔄 Data Flow Architecture
+## Data Flow
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  Telegram API   │───▶│   Bot Handler   │───▶│  URL Detection  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                                        │
-                                                        ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  Audit Log      │◀───│  Database       │◀───│ URL Sanitization│
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                              ▲                        │
-                              │                        ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Statistics    │◀───│  User Config   │◀───│   AI Engine     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+┌──────────────┐    ┌─────────────────┐    ┌──────────────────┐
+│ Telegram API │───▶│  Bot Handler    │───▶│  URL Detection   │
+└──────────────┘    └─────────────────┘    └──────────────────┘
+                                                     │
+                                                     ▼
+┌──────────────┐    ┌─────────────────┐    ┌──────────────────┐
+│  Response    │◀───│  DB (logging)   │◀───│  Sanitization    │
+└──────────────┘    └─────────────────┘    └──────────────────┘
+                                                  │
+                       ┌──────────────┐           ▼
+                       │  Redirects   │◀───┌──────────────────┐
+                       └──────────────┘    │  Security Scan   │
+                                           │  (VT/URLScan)    │
+                                           └──────────────────┘
 ```
 
 ### Processing Pipeline
 
-1. **Message Reception**: Telegram updates processed via long-polling by default, or via webhook (HTTPS POST + `X-Telegram-Bot-Api-Secret-Token`) when `WEBHOOK_URL` is configured
-2. **URL Detection**: Entity-based detection (Url, TextLink) + regex fallback
-3. **Context Analysis**: Language detection, user/chat configuration lookup
-4. **Security Check**: Optional VirusTotal scan for malware detection
-5. **Sanitization**: Rule engine → AI engine (optional) → final result
-6. **Persistence**: Audit logging, statistics tracking, user preferences
-7. **Response**: Formatted response with cleaned URLs and security warnings
+1. **Message Reception** — Long-polling (default) or webhook (`WEBHOOK_URL` + `WEBHOOK_SECRET`)
+2. **URL Detection** — MessageEntity (Url, TextLink) + regex fallback
+3. **Context Analysis** — Language detection, user/chat config lookup
+4. **Security Check** — Optional VirusTotal + URLScan.io scan
+5. **Sanitization** — Rule engine → AI engine (optional) → aggressive tracker fallback
+6. **Alternative Frontends** — LibRedirect + Farside lookup
+7. **Persistence** — Audit logging, statistics, user preferences
+8. **Response** — Formatted message with cleaned URLs and optional security warnings
 
-## 📊 Database Schema & Architecture
+## Database Schema
 
 ### Supported Backends
 
-- **SQLite**: Default for development and small deployments
-- **PostgreSQL**: Recommended for production with high concurrency
+- **SQLite** — Default for development and small deployments
+- **PostgreSQL** — Recommended for production with high concurrency
 
-### Core Tables
+Both are supported via `sqlx::Any` with automatic backend detection from the connection string.
 
-```sql
-user_configs     -- User-specific settings and preferences
-chat_configs     -- Group/chat specific configurations  
-cleaned_links   -- Comprehensive audit log of all processed URLs
-custom_rules     -- User-defined regex patterns for custom sanitization
-```
+### Tables
 
-### Connection Strategy
+| Table | Purpose |
+|-------|---------|
+| `user_configs` | User preferences (enabled, AI toggle, mode, language, privacy, ignored domains, cleaned count) |
+| `chat_configs` | Group chat settings (enabled, mode, added_by) |
+| `cleaned_links` | URL audit log (original_url, cleaned_url, provider, timestamp) |
+| `custom_rules` | User-defined regex patterns |
+| `whitelist_urls` | Trusted domains per user (with UNIQUE constraint) |
+| `feature_flags` | Per-user feature enablement (PRIMARY KEY user_id + feature_name) |
+| `rate_limits` | Sliding-window rate limiting (action_count, window_start) |
 
-- **Dynamic Detection**: Automatic backend selection based on connection string
-- **Connection Pooling**: Optimized for both SQLite and PostgreSQL
-- **Migrations**: Automatic schema management with SQLx migrations
+Tables are created with `CREATE TABLE IF NOT EXISTS` — data persists across restarts.
 
-## 🐳 Container Architecture (Podman)
+## Internationalization
 
-### Security-First Design
+### Supported Languages
 
-- **Rootless Operation**: Full support for rootless Podman
-- **Non-root User**: Container execution as dedicated `clearurls` user
-- **SELinux Integration**: Proper file labeling for enhanced security
-- **Minimal Attack Surface**: Slim base image with only required dependencies
+| Code | Language | Native Name | Code | Language | Native Name |
+|------|----------|-------------|------|----------|-------------|
+| `it` | Italian | Italiano | `ar` | Arabic | العربية |
+| `en` | English | English | `hi` | Hindi | हिन्दी |
+| `es` | Spanish | Español | `zh` | Chinese | 中文 |
+| `fr` | French | Français | `ja` | Japanese | 日本語 |
+| `de` | German | Deutsch | `ko` | Korean | 한국어 |
+| `pt` | Portuguese | Português | `tr` | Turkish | Türkçe |
+| `ru` | Russian | Русский | `nl` | Dutch | Nederlands |
+| `pl` | Polish | Polski | | | |
 
-### Multi-stage Build Optimization
+### Detection Pipeline
 
-```dockerfile
-# Stage 1: Build
-FROM rust:1.92-slim as builder  # Optimized Rust toolchain
-# Stage 2: Runtime  
-FROM debian:bookworm-slim          # Minimal runtime base
-```
+1. **User preference** — saved language from `/setlang` or settings menu (highest priority)
+2. **Content detection** — `whatlang` crate analyzes message text (supports all 15 languages)
+3. **Telegram client** — falls back to the user's Telegram language code
+4. **Default** — English if nothing matches
 
-### Resource Management
+The language selector is rendered as a 4-column inline keyboard grid, with all 15 languages available at once plus a back button.
 
-- **Memory Limit**: 512MB (configurable)
-- **CPU Limit**: 0.5 cores (configurable)
-- **Restart Policy**: Unless-stopped for reliability
-- **Health Checks**: Container health monitoring
+See [LANGUAGES.md](../LANGUAGES.md) for the translation guide.
 
-### Volume Strategy
+## Performance Optimizations
 
-- **SQLite**: Host-mounted database file with proper SELinux context
-- **PostgreSQL**: Network connection to external database
-- **Logs**: Structured logging with rotation to prevent disk exhaustion
+### Build
 
-### Pod Networking
+- **LTO** — `"fat"` for maximum cross-crate optimization
+- **strip** — `"symbols"` to reduce binary size
+- **codegen-units = 1** — single codegen unit for better optimization
+- **panic = "abort"** — smaller panic handler
+- **opt-level = "z"** — size-optimized release binary
 
-```bash
-# Pod creation for network isolation
-podman pod create --name clear_urls_bot_pod -p 3000:3000
-# Container joins pod for shared networking
-podman run --pod clear_urls_bot_pod clear_urls_bot
-```
+### Runtime
 
-## 🚀 Performance Optimizations
+- **Async I/O** — non-blocking operations throughout
+- **Connection pooling** — database connection reuse
+- **In-process caching** — moka cache for URL cleaning results (10k capacity, 1h TTL)
+- **Catalog caching** — LibRedirect/Farside data cached with 6h TTL
+- **Lazy rules loading** — ClearURLs rules fetched on first use, not at startup
+- **HTTP retry** — exponential backoff for all external API calls
 
-### Build Optimizations
-
-- **LTO (Link Time Optimization)**: Better binary optimization across crate boundaries
-- **Single Codegen Unit**: Maximum optimization potential
-- **Panic = Abort**: Smaller binary size, faster startup
-- **Opt-level 3**: Maximum performance optimizations
-
-### Runtime Optimizations
-
-- **Async I/O**: Non-blocking operations throughout
-- **Connection Pooling**: Database connection reuse
-- **Caching**: Multi-layer caching strategy (Moka for hot data)
-- **Zero-copy**: Minimize data copying in hot paths
-- **Efficient Regex**: Compiled patterns with sensitive data protection
-
-### Memory Management
-
-- **String Interning**: Reduce allocations for common strings
-- **Arc/Mutex**: Safe shared state with minimal contention
-- **Buffer Management**: Reuse buffers where possible
-
-## 🛡️ Reliability & Stability
-
-### Error Handling Philosophy
-
-- **Result Types**: Graceful error propagation throughout
-- **No Panics**: Core logic avoids `unwrap()` and `expect()`
-- **Fallback Strategies**: Multiple levels of fallback for robustness
-- **Structured Logging**: Comprehensive tracing for debugging
-
-### Configuration Management
-
-- **Environment-based**: All configuration via environment variables
-- **Validation**: Automatic configuration validation on startup
-- **Secure Defaults**: Secure defaults for all settings
-- **Hot Reload**: Configuration changes without restart where possible
-
-### Observability
-
-- **Structured Logging**: JSON-formatted logs with correlation IDs
-- **Metrics**: Built-in performance and usage metrics
-- **Health Checks**: Application health monitoring
-- **Tracing**: Distributed tracing for request flow analysis
-
-## 🛡️ Security Architecture
-
-### VirusTotal Integration (Optional)
-
-- **Real-time Malware Detection**: Scans URLs with 70+ antivirus engines before cleaning
-- **API v3 Implementation**: Modern REST API with base64 URL-safe encoding
-- **Threat Intelligence**:
-  - Malicious: Any engine reports malware → Critical alert
-  - Suspicious: 3+ engines report suspicious behavior → Warning
-  - Clean: No detections → Processing continues normally
-- **Performance**: 10-second timeout prevents blocking, asynchronous execution
-- **Privacy**: Optional feature, URLs sent to VirusTotal become public
-- **Rate Limits**: Free tier supports 4 req/min, 500/day (suitable for small-medium deployments)
+## Security Architecture
 
 ### Input Validation & Sanitization
 
-- **URL Detection**: Entity-based with MessageEntityKind::Url and TextLink support
-- **Callback Sanitization**: Separate validation for callback data (non-URL strings)
-- **Rate Limiting**: Anti-flood protection with 1 request/second per user
-- **Admin Controls**: Systematic permission checks for admin actions
+- **Rate limiting** — moka sync cache, 1 request/second per user
+- **Input sanitization** — control character stripping, 4000-char cap
+- **Callback sanitization** — same as input, for callback query data
+- **URL validation** — regex + malicious pattern detection (javascript:, data:, etc.)
+- **Telegram text escaping** — HTML entity encoding for `<`, `>`, `&`, `"`, `'`
 
-## 🚀 Funzionalità Avanzate
+### External Security Integrations
 
-- **VirusTotal Security**: Real-time malware detection with detailed threat analysis
-- Statistiche globali e ranking utenti: /topusers, /toplinks
-- Supporto multi-lingua: /language, /setlang <codice>
-- Modalità privacy: /privacy per attivare/disattivare salvataggio cronologia
-- Logging avanzato: solo admin riceve log critici via Telegram
-- Notifiche automatiche errori: messaggio all’admin in caso di panic/errori
-- Backup automatico DB: script backup_db.sh, cron consigliato
-- Caching risultati pulizia: cache interna per URL ripetuti
-- Ottimizzazione DB/async: query asincrone, pooling, batch
-- Webhook HTTPS: supportato nativamente (teloxide + axum), attivabile via `WEBHOOK_URL` / `WEBHOOK_SECRET` / `PORT`
-- Modulo `redirects::`: lookup frontend alternativi tramite LibRedirect + Farside, cache TTL via moka, esposto col comando `/redirect`
-- Integrazione VirusTotal: controllo link sospetti, avviso all’utente
+- **VirusTotal API** — Real-time malware detection with 70+ antivirus engines
+- **URLScan.io** — Behavioral analysis and web reputation scoring
+- Both are optional and disabled by default
 
-## 🔧 Development Architecture
+### Container Security
 
-### Toolchain Requirements
+- Rootless Podman execution
+- Non-root user in container
+- SELinux file labeling
 
-- **Minimum Rust**: 1.75 (MSRV)
-- **Recommended Rust**: 1.92+ (tested)
-- **Edition**: Rust 2021 with modern features
+## Development
+
+### Toolchain
+
+- **Minimum Rust**: 1.88 (MSRV, set in `Cargo.toml`)
+- **Edition**: Rust 2021
 
 ### Code Organization Principles
 
-- **Single Responsibility**: Each module has a clear, focused purpose
-- **Dependency Injection**: Testable architecture with trait abstractions
-- **Async/Await**: Consistent async patterns throughout
-- **Error Handling**: Comprehensive error types and recovery strategies
+- **Single Responsibility** — each module has a focused purpose
+- **Async/Await** — consistent async patterns
+- **Error Handling** — `AppError` enum with `AppResult<T>` type alias
+- **No panics in production code** — graceful error propagation
 
-### Testing Strategy
+### Testing
 
-- **Unit Tests**: Comprehensive test coverage for core logic
-- **Integration Tests**: End-to-end testing with real databases
-- **Property Tests**: Generative testing for edge cases
-- **Benchmarks**: Performance regression testing
-
-This architecture provides a solid foundation for a production-ready, secure, and maintainable URL sanitization service.
+- **Unit tests** — inline `#[cfg(test)]` modules in each source file
+- **Integration tests** — `tests/` directory with in-memory SQLite
+- **110 total tests** — 63 unit + 8 bot commands + 10 database + 9 sanitizer + 20 security
+- Tests run in parallel with isolated databases

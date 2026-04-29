@@ -9,29 +9,7 @@ pub struct Db {
 }
 
 impl Db {
-    pub async fn init_tables(&self) -> Result<()> {
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS user_configs (
-                    user_id INTEGER PRIMARY KEY,
-                    cleaned_count INTEGER DEFAULT 0,
-                    ignored_domains TEXT DEFAULT '',
-                    language TEXT DEFAULT 'it',
-                    privacy_mode INTEGER DEFAULT 0
-                )",
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS cleaned_links (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    original_url TEXT NOT NULL,
-                    cleaned_url TEXT NOT NULL
-                )",
-        )
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
+    // init_tables function removed as it's not used and Db::init handles schema creation.
 
     pub async fn new(database_url: &str) -> Result<Self> {
         sqlx::any::install_default_drivers();
@@ -55,10 +33,9 @@ impl Db {
         self.database_url.starts_with("sqlite")
     }
 
-    async fn init(&self) -> Result<()> {
-        let is_sqlite = self.is_sqlite();
-
-        let create_user_configs = if is_sqlite {
+    pub async fn init(&self) -> Result<()> {
+        // SQLite schema creation (uses IF NOT EXISTS to preserve data on restart)
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS user_configs (
                 user_id INTEGER PRIMARY KEY,
                 enabled INTEGER NOT NULL DEFAULT 1,
@@ -66,133 +43,36 @@ impl Db {
                 mode TEXT NOT NULL DEFAULT 'reply',
                 ignored_domains TEXT NOT NULL DEFAULT '',
                 cleaned_count INTEGER NOT NULL DEFAULT 0,
-                language TEXT NOT NULL DEFAULT 'en'
-            )"
-        } else {
-            "CREATE TABLE IF NOT EXISTS user_configs (
-                user_id BIGINT PRIMARY KEY,
-                enabled BOOLEAN NOT NULL DEFAULT TRUE,
-                ai_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-                mode TEXT NOT NULL DEFAULT 'reply',
-                ignored_domains TEXT NOT NULL DEFAULT '',
-                cleaned_count BIGINT NOT NULL DEFAULT 0,
-                language TEXT NOT NULL DEFAULT 'en'
-            )"
-        };
+                language TEXT NOT NULL DEFAULT 'en',
+                privacy_mode INTEGER NOT NULL DEFAULT 0
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(create_user_configs).execute(&self.pool).await?;
-
-        // Robust migrations: check if columns exist before adding
-        if is_sqlite {
-            let table_info: Vec<(i64, String, String, i32, Option<String>, i32)> =
-                sqlx::query_as("PRAGMA table_info(user_configs)")
-                    .fetch_all(&self.pool)
-                    .await?;
-
-            let cols: Vec<String> = table_info
-                .into_iter()
-                .map(|(_, name, _, _, _, _)| name)
-                .collect();
-
-            if !cols.contains(&"ai_enabled".to_string()) {
-                sqlx::query(
-                    "ALTER TABLE user_configs ADD COLUMN ai_enabled INTEGER NOT NULL DEFAULT 0",
-                )
-                .execute(&self.pool)
-                .await?;
-            }
-            if !cols.contains(&"ignored_domains".to_string()) {
-                sqlx::query(
-                    "ALTER TABLE user_configs ADD COLUMN ignored_domains TEXT NOT NULL DEFAULT ''",
-                )
-                .execute(&self.pool)
-                .await?;
-            }
-            if !cols.contains(&"cleaned_count".to_string()) {
-                sqlx::query(
-                    "ALTER TABLE user_configs ADD COLUMN cleaned_count INTEGER NOT NULL DEFAULT 0",
-                )
-                .execute(&self.pool)
-                .await?;
-            }
-            if !cols.contains(&"language".to_string()) {
-                sqlx::query(
-                    "ALTER TABLE user_configs ADD COLUMN language TEXT NOT NULL DEFAULT 'en'",
-                )
-                .execute(&self.pool)
-                .await?;
-            }
-            if !cols.contains(&"privacy_mode".to_string()) {
-                sqlx::query(
-                    "ALTER TABLE user_configs ADD COLUMN privacy_mode INTEGER NOT NULL DEFAULT 0",
-                )
-                .execute(&self.pool)
-                .await?;
-            }
-        } else {
-            // Postgres migration logic
-            sqlx::query("ALTER TABLE user_configs ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT FALSE").execute(&self.pool).await?;
-            sqlx::query("ALTER TABLE user_configs ADD COLUMN IF NOT EXISTS ignored_domains TEXT NOT NULL DEFAULT ''").execute(&self.pool).await?;
-            sqlx::query("ALTER TABLE user_configs ADD COLUMN IF NOT EXISTS cleaned_count BIGINT NOT NULL DEFAULT 0").execute(&self.pool).await?;
-            sqlx::query("ALTER TABLE user_configs ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'en'").execute(&self.pool).await?;
-            sqlx::query("ALTER TABLE user_configs ADD COLUMN IF NOT EXISTS privacy_mode BOOLEAN NOT NULL DEFAULT FALSE").execute(&self.pool).await?;
-        }
-
-        let create_chat_configs = if is_sqlite {
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS chat_configs (
                 chat_id INTEGER PRIMARY KEY,
                 title TEXT,
                 enabled INTEGER NOT NULL DEFAULT 1,
                 added_by INTEGER NOT NULL,
                 mode TEXT NOT NULL DEFAULT 'default'
-            )"
-        } else {
-            "CREATE TABLE IF NOT EXISTS chat_configs (
-                chat_id BIGINT PRIMARY KEY,
-                title TEXT,
-                enabled BOOLEAN NOT NULL DEFAULT TRUE,
-                added_by BIGINT NOT NULL,
-                mode TEXT NOT NULL DEFAULT 'default'
-            )"
-        };
-        sqlx::query(create_chat_configs).execute(&self.pool).await?;
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
 
-        if is_sqlite {
-            let table_info: Vec<(i64, String, String, i32, Option<String>, i32)> =
-                sqlx::query_as("PRAGMA table_info(chat_configs)")
-                    .fetch_all(&self.pool)
-                    .await?;
-            let cols: Vec<String> = table_info
-                .into_iter()
-                .map(|(_, name, _, _, _, _)| name)
-                .collect();
-            if !cols.contains(&"mode".to_string()) {
-                sqlx::query(
-                    "ALTER TABLE chat_configs ADD COLUMN mode TEXT NOT NULL DEFAULT 'default'",
-                )
-                .execute(&self.pool)
-                .await?;
-            }
-        } else {
-            sqlx::query("ALTER TABLE chat_configs ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'default'").execute(&self.pool).await?;
-        }
-
-        let create_rules = if is_sqlite {
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS custom_rules (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 pattern TEXT NOT NULL
-            )"
-        } else {
-            "CREATE TABLE IF NOT EXISTS custom_rules (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT NOT NULL,
-                pattern TEXT NOT NULL
-            )"
-        };
-        sqlx::query(create_rules).execute(&self.pool).await?;
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
 
-        let create_history = if is_sqlite {
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS cleaned_links (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -200,94 +80,44 @@ impl Db {
                 cleaned_url TEXT NOT NULL,
                 provider_name TEXT,
                 timestamp INTEGER NOT NULL
-            )"
-        } else {
-            "CREATE TABLE IF NOT EXISTS cleaned_links (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT NOT NULL,
-                original_url TEXT NOT NULL,
-                cleaned_url TEXT NOT NULL,
-                provider_name TEXT,
-                timestamp BIGINT NOT NULL
-            )"
-        };
-        sqlx::query(create_history).execute(&self.pool).await?;
-        if is_sqlite {
-            let table_info: Vec<(i64, String, String, i32, Option<String>, i32)> =
-                sqlx::query_as("PRAGMA table_info(cleaned_links)")
-                    .fetch_all(&self.pool)
-                    .await?;
-            let cols: Vec<String> = table_info
-                .into_iter()
-                .map(|(_, name, _, _, _, _)| name)
-                .collect();
-            if !cols.contains(&"provider_name".to_string()) {
-                sqlx::query("ALTER TABLE cleaned_links ADD COLUMN provider_name TEXT")
-                    .execute(&self.pool)
-                    .await?;
-            }
-        } else {
-            sqlx::query("ALTER TABLE cleaned_links ADD COLUMN IF NOT EXISTS provider_name TEXT")
-                .execute(&self.pool)
-                .await?;
-        }
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
 
-        let create_whitelist = if is_sqlite {
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS whitelist_urls (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 domain TEXT NOT NULL,
                 added_at INTEGER NOT NULL,
                 UNIQUE(user_id, domain)
-            )"
-        } else {
-            "CREATE TABLE IF NOT EXISTS whitelist_urls (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT NOT NULL,
-                domain TEXT NOT NULL,
-                added_at BIGINT NOT NULL,
-                UNIQUE(user_id, domain)
-            )"
-        };
-        sqlx::query(create_whitelist).execute(&self.pool).await?;
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
 
-        // Feature flags table
-        let create_feature_flags = if is_sqlite {
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS feature_flags (
                 user_id INTEGER NOT NULL,
                 feature_name TEXT NOT NULL,
                 enabled INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (user_id, feature_name)
-            )"
-        } else {
-            "CREATE TABLE IF NOT EXISTS feature_flags (
-                user_id BIGINT NOT NULL,
-                feature_name TEXT NOT NULL,
-                enabled BOOLEAN NOT NULL DEFAULT FALSE,
-                PRIMARY KEY (user_id, feature_name)
-            )"
-        };
-        sqlx::query(create_feature_flags)
-            .execute(&self.pool)
-            .await?;
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
 
-        // Rate limiting table
-        let create_rate_limits = if is_sqlite {
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS rate_limits (
                 user_id INTEGER PRIMARY KEY,
                 action_count INTEGER NOT NULL DEFAULT 0,
                 window_start INTEGER NOT NULL,
                 last_action INTEGER NOT NULL
-            )"
-        } else {
-            "CREATE TABLE IF NOT EXISTS rate_limits (
-                user_id BIGINT PRIMARY KEY,
-                action_count BIGINT NOT NULL DEFAULT 0,
-                window_start BIGINT NOT NULL,
-                last_action BIGINT NOT NULL
-            )"
-        };
-        sqlx::query(create_rate_limits).execute(&self.pool).await?;
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -358,8 +188,8 @@ impl Db {
 
     pub async fn save_user_config(&self, config: &UserConfig) -> Result<()> {
         sqlx::query(
-            "INSERT INTO user_configs (user_id, enabled, ai_enabled, mode, ignored_domains, cleaned_count, language) VALUES (?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(user_id) DO UPDATE SET enabled = ?, ai_enabled = ?, mode = ?, ignored_domains = ?, cleaned_count = ?, language = ?"
+            "INSERT INTO user_configs (user_id, enabled, ai_enabled, mode, ignored_domains, cleaned_count, language, privacy_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(user_id) DO UPDATE SET enabled = ?, ai_enabled = ?, mode = ?, ignored_domains = ?, cleaned_count = ?, language = ?, privacy_mode = ?"
         )
         .bind(config.user_id)
         .bind(config.enabled)
@@ -368,23 +198,29 @@ impl Db {
         .bind(&config.ignored_domains)
         .bind(config.cleaned_count)
         .bind(&config.language)
+        .bind(config.privacy_mode)
         .bind(config.enabled)
         .bind(config.ai_enabled)
         .bind(&config.mode)
         .bind(&config.ignored_domains)
         .bind(config.cleaned_count)
         .bind(&config.language)
+        .bind(config.privacy_mode)
         .execute(&self.pool)
         .await?;
         Ok(())
     }
 
     pub async fn increment_cleaned_count(&self, user_id: i64, amount: i64) -> Result<()> {
-        sqlx::query("UPDATE user_configs SET cleaned_count = cleaned_count + ? WHERE user_id = ?")
-            .bind(amount)
-            .bind(user_id)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "INSERT INTO user_configs (user_id, cleaned_count) VALUES (?, ?)
+             ON CONFLICT(user_id) DO UPDATE SET cleaned_count = cleaned_count + ?",
+        )
+        .bind(user_id)
+        .bind(amount)
+        .bind(amount)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -415,14 +251,14 @@ impl Db {
 
     pub async fn get_stats_by_day(&self, user_id: i64) -> Result<Vec<(String, i64)>> {
         let query = if self.is_sqlite() {
-            "SELECT date(timestamp, 'unixepoch') as day, COUNT(*) \
-             FROM cleaned_links \
-             WHERE user_id = ? \
+            "SELECT date(timestamp, 'unixepoch') as day, COUNT(*) 
+             FROM cleaned_links 
+             WHERE user_id = ? 
              GROUP BY day ORDER BY day DESC LIMIT 7"
         } else {
-            "SELECT to_char(to_timestamp(timestamp), 'YYYY-MM-DD') as day, COUNT(*) \
-             FROM cleaned_links \
-             WHERE user_id = ? \
+            "SELECT to_char(to_timestamp(timestamp), 'YYYY-MM-DD') as day, COUNT(*) 
+             FROM cleaned_links 
+             WHERE user_id = ? 
              GROUP BY day ORDER BY day DESC LIMIT 7"
         };
 
@@ -551,20 +387,31 @@ impl Db {
     }
 
     pub async fn get_domain_cleanup_stats(&self, user_id: i64) -> Result<Vec<(String, i64)>> {
-        let rows = sqlx::query_as::<_, (String, i64)>(
-            "SELECT \
-                SUBSTR(original_url, INSTR(original_url, '://') + 3, \
-                       INSTR(SUBSTR(original_url, INSTR(original_url, '://') + 3), '/') - 1) as domain,\
-                COUNT(*) as clean_count\
-             FROM cleaned_links \
-             WHERE user_id = ? \
-             GROUP BY domain \
-             ORDER BY clean_count DESC \
+        let query = if self.is_sqlite() {
+            "SELECT 
+                SUBSTR(original_url, INSTR(original_url, '://') + 3, 
+                       INSTR(SUBSTR(original_url, INSTR(original_url, '://') + 3), '/') - 1) as domain,
+                COUNT(*) as clean_count
+             FROM cleaned_links 
+             WHERE user_id = ? 
+             GROUP BY domain 
+             ORDER BY clean_count DESC 
              LIMIT 10"
-        )
-        .bind(user_id)
-        .fetch_all(&self.pool)
-        .await?;
+        } else {
+            "SELECT 
+                SPLIT_PART(SPLIT_PART(original_url, '://', 2), '/', 1) as domain,
+                COUNT(*) as clean_count
+             FROM cleaned_links 
+             WHERE user_id = $1
+             GROUP BY domain 
+             ORDER BY clean_count DESC 
+             LIMIT 10"
+        };
+
+        let rows = sqlx::query_as::<_, (String, i64)>(query)
+            .bind(user_id)
+            .fetch_all(&self.pool)
+            .await?;
 
         Ok(rows)
     }

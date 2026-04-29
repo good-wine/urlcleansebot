@@ -1,144 +1,82 @@
 # Fixes Applied to ClearURLs Bot
 
-## 1. `src/db/implementation.rs` — Non-existent `connect_options()` call
+## Recent Fixes
 
-### Problem
-`Pool<Any>` in sqlx 0.8 does **not** expose a `connect_options()` method that
-returns an object with a `.database_url.scheme()` getter.  Every call to
+### 1. `db/implementation.rs` — Data loss on restart (SQLite)
 
-```rust
-self.pool.connect_options().database_url.scheme() == "sqlite"
-```
+**Problem:** `DROP TABLE` + `CREATE TABLE` on every `init()` call destroyed all data on restart.
 
-would fail to compile (and did fail at `cargo check`).  The pattern appeared in
-`init()` and `get_stats_by_day()`.
+**Fix:** Replaced with `CREATE TABLE IF NOT EXISTS` for all 7 tables. Data now persists across restarts.
 
-### Fix
-Store the raw database URL string in the `Db` struct and derive the backend
-type from it:
+### 2. `db/implementation.rs` — `increment_cleaned_count` silently failed
 
-```rust
-// Before
-#[derive(Clone)]
-pub struct Db {
-    pub pool: Pool<Any>,
-}
+**Problem:** `UPDATE user_configs SET cleaned_count = ... WHERE user_id = ?` did nothing when the row didn't exist (e.g., when `get_user_config` returned a default without inserting).
 
-// After
-#[derive(Clone)]
-pub struct Db {
-    pub pool: Pool<Any>,
-    database_url: String,   // ← new private field
-}
-```
+**Fix:** Changed to `INSERT ... ON CONFLICT(user_id) DO UPDATE SET cleaned_count = cleaned_count + ?`.
 
-`Db::new()` now stores `database_url` and a new private helper replaces every
-occurrence of the broken call:
+### 3. `db/implementation.rs` — Missing `privacy_mode` column
 
-```rust
-fn is_sqlite(&self) -> bool {
-    self.database_url.starts_with("sqlite")
-}
-```
+**Problem:** The `UserConfig` model had a `privacy_mode` field but the schema was missing it, causing "no column found" errors on read.
 
-All SQLite/PostgreSQL branch selections in `init()` and `get_stats_by_day()`
-now call `self.is_sqlite()`.
+**Fix:** Added `privacy_mode INTEGER NOT NULL DEFAULT 0` to the `user_configs` table schema and updated `save_user_config` to include it.
 
----
+### 4. `config.rs` — Duplicated `PORT` parsing with conflicting defaults
 
-## 2. `src/security.rs` — `sanitize_input` rejected all non-URL text
+**Problem:** `PORT` was parsed twice — once as a `String` with default `"3000"` (used for `SERVER_ADDR`) and once as a `u16` with default `8080`.
 
-### Problem
-The original implementation delegated to `is_valid_url()` and returned an
-empty string for any input that did not start with `http://` or `https://`:
+**Fix:** Single parse as `u16` with default `8080`, shared by both `port` and `server_addr` construction. Removed `DEFAULT_PORT` string constant.
 
-```rust
-pub fn sanitize(input: &str) -> String {
-    let mut s = input.trim().replace(|c: char| c.is_control(), "");
-    if s.len() > 4000 { s.truncate(4000); }
-    if !is_valid_url(&s) {          // ← silently drops e.g. Telegram inline queries
-        log::error!("Input non valido: {}", s);
-        return String::new();
-    }
-    s
-}
-```
+### 5. Security modules — Duplicated code in `src/security.rs` and `src/shared/security.rs`
 
-`sanitize_input` is called in `src/bot.rs` for **inline query text**
-(`q.query.trim()`) which is never a bare URL.  This caused every inline query
-to be silently discarded.
+**Problem:** Two separate security modules with overlapping functionality (rate limiting, input sanitization, URL validation).
 
-### Fix
-`sanitize_input` now only strips control characters and caps length — URL
-validation is a separate concern:
+**Fix:** Merged everything into `shared/security.rs` with:
+- Sync `RateLimiter` + static `RATE_LIMITER` (for message handlers)
+- Async `check_rate_limit` (for query handlers)
+- `sanitize_input`, `sanitize_callback`, `sanitize_telegram_text`
+- `validate_url`, `validate_user_id`, `validate_domain`, `is_admin`
+- `SecurityError` enum
+- Deleted `src/security.rs` and `pub mod security;` from `lib.rs`
+- Updated imports in `presentation/telegram/handlers.rs`
 
-```rust
-pub fn sanitize_input(input: &str) -> String {
-    let mut s: String = input.trim().chars().filter(|c| !c.is_control()).collect();
-    if s.len() > 4_000 { s = s.chars().take(4_000).collect(); }
-    s
-}
-```
+### 6. `i18n.rs` — 115-line commented-out dead code
+
+**Problem:** `load_translations_from_file()` was entirely commented out with a note about `&'static str` lifetime issues.
+
+**Fix:** Removed the entire commented block.
+
+### 7. `i18n.rs` — Unused `d_ignored_domains` field
+
+**Problem:** `#[allow(dead_code)]` attribute on a field that was never read anywhere in the codebase.
+
+**Fix:** Removed the field from the `Translations` struct and all language translation implementations.
+
+### 8. `domain/services/mod.rs` — Unused skeleton traits
+
+**Problem:** `UrlCleaningService`, `SecurityService`, `FrontendService`, `UserService`, `StatisticsService` traits were defined but never implemented or used.
+
+**Fix:** Deleted the entire `domain/services/` directory and removed `pub mod services;` from `domain/mod.rs`.
+
+### 9. Integration tests — Shared SQLite in-memory database
+
+**Problem:** All tests used `sqlite::memory:` which caused "table already exists" errors when tests ran in parallel.
+
+**Fix:** Each test gets a unique database via `sqlite:file:testdb{id}?mode=memory&cache=shared` with an atomic counter.
+
+### 10. Sanitizer tests — `RuleEngine::new_lazy()` doesn't load rules
+
+**Problem:** Tests called `sanitize()` on an engine with no rules loaded, causing `unwrap()` panics.
+
+**Fix:** Changed to async `RuleEngine::new(...).await` which fetches and loads ClearURLs rules.
 
 ---
 
-## 3. `src/security.rs` — Mutex `.unwrap()` could panic
+## Legacy Fixes (from earlier versions)
 
-### Problem
-```rust
-let mut users = self.users.lock().unwrap();
-```
-If another thread panicked while holding the lock, this `unwrap()` would
-propagate the panic to every subsequent caller.
+### `db/implementation.rs` — Non-existent `connect_options()` call
 
-### Fix
-Recover gracefully from a poisoned mutex:
+`Pool<Any>` in sqlx 0.8 does not expose `connect_options()`. Fixed by storing the raw URL string in `Db` and deriving backend type via `is_sqlite()` helper.
 
-```rust
-let mut users = match self.users.lock() {
-    Ok(u) => u,
-    Err(poisoned) => {
-        log::error!("RateLimiter mutex poisoned, recovering");
-        poisoned.into_inner()
-    }
-};
-```
+### `sanitize_input` — Rejected all non-URL text
 
----
-
-## 4. `src/sanitizer/validation.rs` — Mutex `.unwrap()` + incorrect cache logic
-
-### Problem
-```rust
-let mut cache = URL_CACHE.lock().unwrap();    // panic-prone
-if let Some(&result) = cache.get(url) { return result; }
-let result = url.starts_with("http://") || url.starts_with("https://");
-cache.insert(url.to_string(), result);
-result
-```
-The `unwrap()` could panic.  Also, the value was computed *before* the lock was
-released, but the early-return path still held the lock unnecessarily.
-
-### Fix
-Compute the result first (no lock needed), then update the cache in a
-best-effort, panic-free way:
-
-```rust
-pub fn is_valid_url(url: &str) -> bool {
-    let result = url.starts_with("http://") || url.starts_with("https://");
-    if let Ok(mut cache) = URL_CACHE.lock() {
-        cache.entry(url.to_string()).or_insert(result);
-    }
-    result
-}
-```
-
----
-
-## Files changed
-
-| File | Change |
-|------|--------|
-| `src/db/implementation.rs` | Add `database_url: String` to `Db`; add `is_sqlite()` helper; replace all `connect_options()` calls |
-| `src/security.rs` | `sanitize_input` no longer validates URL format; poison-safe mutex recovery |
-| `src/sanitizer/validation.rs` | Compute result before locking; panic-free cache update |
+Original implementation returned empty string for any input not starting with `http://`/`https://`, breaking inline queries. Fixed to only strip control characters and cap length.

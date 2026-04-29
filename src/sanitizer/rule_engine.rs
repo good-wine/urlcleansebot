@@ -4,6 +4,7 @@ use moka::future::Cache;
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::{Arc, LazyLock, RwLock};
 use tracing::info;
 use url::Url;
@@ -82,7 +83,7 @@ impl RuleEngine {
             source_url: source_url.to_string(),
             cache: Cache::builder()
                 .max_capacity(10_000)
-                .time_to_live(std::time::Duration::from_secs(3600)) // 1 hour TTL
+                .time_to_live(std::time::Duration::from_secs(3600))
                 .build(),
         }
     }
@@ -91,6 +92,39 @@ impl RuleEngine {
         let engine = Self::new_lazy(source_url);
         engine.refresh().await?;
         Ok(engine)
+    }
+
+    fn is_private_or_reserved_ip(ip: &IpAddr) -> bool {
+        match ip {
+            IpAddr::V4(addr) => {
+                addr.is_private()
+                    || addr.is_loopback()
+                    || addr.is_link_local()
+                    || addr.is_broadcast()
+                    || addr.is_unspecified()
+                    || addr.octets()[0] == 100 && (addr.octets()[1] & 0b1100_0000 == 0b0100_0000)
+                    || addr.octets()[0] == 10
+                    || addr.octets()[0] == 172 && (addr.octets()[1] & 0b1111_0000 == 0b0001_0000)
+                    || addr.octets()[0] == 192 && addr.octets()[1] == 168
+            }
+            IpAddr::V6(addr) => {
+                addr.is_loopback()
+                    || addr.is_unspecified()
+                    || addr.segments()[0] == 0xfc00
+                    || addr.segments()[0] == 0xfe80
+            }
+        }
+    }
+
+    async fn resolve_and_check_ssrf(host: &str) -> bool {
+        use std::net::ToSocketAddrs;
+        let addr = format!("{host}:443");
+        if let Ok(mut iter) = addr.to_socket_addrs() {
+            if let Some(socket_addr) = iter.next() {
+                return !Self::is_private_or_reserved_ip(&socket_addr.ip());
+            }
+        }
+        false
     }
 
     pub async fn refresh(&self) -> Result<()> {
@@ -164,7 +198,6 @@ impl RuleEngine {
             Err(_) => return input_url.to_string(),
         };
 
-        // We only want to expand common shorteners or if it looks like a redirector
         let url_lower = input_url.to_lowercase();
         let shorteners = [
             "bit.ly",
@@ -186,6 +219,20 @@ impl RuleEngine {
             if let Ok(resp) = client.head(input_url).send().await {
                 let final_url = resp.url().to_string();
                 if final_url != input_url {
+                    if let Ok(parsed) = Url::parse(&final_url) {
+                        if let Some(host) = parsed.host_str() {
+                            if !Self::resolve_and_check_ssrf(host).await {
+                                tracing::warn!(
+                                    url = %final_url,
+                                    "SSRF blocked: redirect to private/reserved IP"
+                                );
+                                self.cache
+                                    .insert(input_url.to_string(), input_url.to_string())
+                                    .await;
+                                return input_url.to_string();
+                            }
+                        }
+                    }
                     tracing::info!(original = %input_url, expanded = %final_url, "URL espanso con successo");
                     self.cache
                         .insert(input_url.to_string(), final_url.clone())

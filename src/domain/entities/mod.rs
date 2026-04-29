@@ -124,5 +124,6 @@ pub struct UrlHistory {
     pub user_id: i64,
     pub original_url: String,
     pub cleaned_url: String,
+    pub provider_name: Option<String>,
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }

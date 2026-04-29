@@ -1,512 +1,227 @@
-# Contributing to ClearURLs Bot 🛡️
+# Contributing to ClearURLs Bot
 
-Thank you for your interest in contributing! We welcome all contributions that help make this project more robust, feature-rich, and secure. This guide covers everything you need to know to contribute effectively.
+Thank you for your interest in contributing! We welcome all contributions that help make this project more robust, feature-rich, and secure.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
-**Required:**
-
-- [Rust](https://www.rust-lang.org/tools/install) 1.75+ (MSRV), 1.92+ recommended
-- [Git](https://git-scm.com/) for version control
-
-**Optional (for container development):**
-
-- [Podman](https://podman.io/getting-started/installation) for containerized development
-- [Podman Compose](https://github.com/containers/podman-compose) for compose workflows
-- [Docker](https://www.docker.com/) (alternative to Podman)
+- **Rust 1.88+** (set as `rust-version` in `Cargo.toml`)
+- **Git** for version control
+- **Podman** (optional, for containerized development)
 
 ### Initial Setup
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/clear_urls_bot.git
-cd clear_urls_bot
+git clone https://github.com/good-wine/clearurlsbot.git
+cd clearurlsbot
 
-# Set up your development environment
 cp .env.example .env
 # Edit .env with your development configuration
 
-# Install development dependencies
 rustup component add rustfmt clippy
-cargo install cargo-watch cargo-audit  # Optional but recommended
 ```
 
-## 🛠️ Development Workflows
+## Development Workflows
 
 ### Local Development
 
 ```bash
-# Install dependencies and build
-cargo build
-
-# Run with auto-reload during development
-cargo watch -x run
-
-# Run tests
-cargo test
-
-# Check code quality
-cargo fmt --check
-cargo clippy --all-targets --all-features
+cargo build            # debug build
+cargo run              # run with auto-reload via cargo-watch
+cargo test             # run all tests
+cargo fmt --check      # check formatting
+cargo clippy --all-targets -- -D warnings  # lint
 ```
 
 ### Container Development
 
 ```bash
-# Build container for testing
 ./podman-deploy.sh build
-
-# Run container locally
 ./podman-deploy.sh run
-
-# View container logs
 ./podman-deploy.sh logs
-
-# Stop container
 ./podman-deploy.sh stop
 ```
 
 ### Database Development
 
 ```bash
-# Development with SQLite (default)
+# SQLite (default)
 cargo run
 
-# Development with PostgreSQL
+# PostgreSQL
 export DATABASE_URL=postgresql://user:pass@localhost/clearurls_dev
 cargo run
-
-# Run database migrations
-cargo sqlx migrate run --database-url sqlite:bot_dev.db
 ```
 
-## 🧪 Testing & Quality Assurance
+## Testing
 
 ### Pre-commit Checklist
 
-Before submitting any PR, ensure all of these pass:
-
 ```bash
-# Code formatting
 cargo fmt
-
-# Linting and static analysis
-cargo clippy --all-targets --all-features
-
-# Security audit
-cargo audit
-
-# Run all tests
-cargo test --all-features
-
-# Build check for all targets
-cargo check --all-targets --all-features
-
-# Documentation check
-cargo doc --no-deps --document-private-items
+cargo clippy --all-targets -- -D warnings
+cargo test
+cargo check --all-targets
 ```
 
-### Testing Guidelines
+### Test Structure
 
-1. **Unit Tests**: Test individual functions and modules
+The project has **90 tests** across 5 categories:
 
-   ```bash
-   cargo test --lib
-   ```
+| Suite | Count | Description |
+|-------|-------|-------------|
+| Unit tests (`cargo test --lib`) | 63 | Sanitizer, redirects, security, helpers, health |
+| Bot commands (`cargo test --test bot_commands_tests`) | 8 | Integration tests with in-memory SQLite |
+| Database (`cargo test --test database_tests`) | 10 | User configs, history, whitelist, feature flags |
+| Sanitizer (`cargo test --test sanitizer_tests`) | 9 | Real ClearURLs rules fetching and URL cleaning |
+| Security (`cargo test --test security_tests`) | 0 | See unit tests in `shared/security.rs` |
 
-2. **Integration Tests**: Test component interactions
-
-   ```bash
-   cargo test --test '*'
-   ```
-
-3. **Documentation Tests**: Ensure examples in documentation work
-
-   ```bash
-   cargo test --doc
-   ```
-
-4. **Performance Tests**: Benchmark critical paths
-
-   ```bash
-   cargo bench  # If benchmarks exist
-   ```
-
-5. **Test Coverage**: All tests are in `tests/` directory
-
-   - `sanitizer_tests.rs` - URL cleaning and validation
-   - `database_tests.rs` - Database operations and migrations
-   - `bot_commands_tests.rs` - Bot command handlers
-   - `common/mod.rs` - Shared test utilities and fixtures
-
-### Test Execution in CI/CD
-
-All tests run automatically on push/PR via GitHub Actions:
-
-- **Check**: `cargo check --release --all-features`
-- **Test**: `cargo test --release --all-features`
-- **Format**: `cargo fmt --all -- --check`
-- **Clippy**: `cargo clippy --release --all-features -- -D warnings`
-- **Security Audit**: `cargo audit`
-- **Markdown Lint**: `markdownlint "*.md" "docs/*.md"`
-
-See [`.github/workflows/ci.yml`](.github/workflows/ci.yml) for full pipeline.
-
-### Code Quality Standards
-
-- **Clippy**: All clippy warnings must be addressed or explicitly allowed
-- **Documentation**: All public functions and types must have `///` documentation
-- **Error Handling**: Use `Result` types, avoid `unwrap()` in production code
-- **Logging**: Use `tracing` for structured logging with appropriate levels
-
-## 📝 Development Guidelines
-
-### Code Style
-
-We follow standard Rust conventions with these additional guidelines:
-
-```rust
-// ✅ Good: Use descriptive names and proper error handling
-async fn process_message(
-    bot: Bot, 
-    msg: Message,
-    db: Db
-) -> ResponseResult<()> {
-    // Implementation with proper error handling
-}
-
-// ❌ Bad: Vague names, unwrapping, no error context
-async fn handle(b: Bot, m: Message, d: Db) {
-    let result = some_operation().unwrap();
-}
-```
-
-### Project Structure
-
-```
-src/
-├── lib.rs              # Public API and module exports
-├── main.rs             # Application entry point
-├── bot.rs              # Telegram bot logic
-├── config.rs           # Configuration management
-├── i18n.rs            # Internationalization
-├── db/                 # Database layer
-│   ├── mod.rs
-│   ├── implementation.rs
-│   └── models.rs
-└── sanitizer/          # URL processing
-    ├── mod.rs
-    ├── rule_engine.rs
-    └── ai_engine.rs
-```
-
-### Adding New Features
-
-1. **Database Changes**:
-   - Create migration in `migrations/` directory
-   - Update models in `src/db/models.rs`
-   - Add relevant tests
-
-2. **New Dependencies**:
-   - Add to `Cargo.toml` with specific version
-   - Update `rust-toolchain.toml` if minimum Rust version changes
-   - Document why the dependency is needed
-
-3. **Configuration**:
-   - Add to `src/config.rs` with validation
-   - Update `.env.example` with new settings
-   - Document in configuration section
-
-## 📬 Pull Request Process
-
-### Step-by-Step PR Submission
-
-1. **Create Branch**: Use descriptive branch names
-
-   ```bash
-   git checkout -b feature/url-sanitization-enhancement
-   # or
-   git checkout -b fix/database-connection-leak
-   ```
-
-2. **Development Work**:
-
-   ```bash
-   # Make your changes
-   # Commit frequently with descriptive messages
-   git add .
-   git commit -m "feat: add AI-powered URL detection
-   
-   - Implement LLM integration for complex tracking patterns
-   - Add configuration options for AI model selection  
-   - Update documentation with AI setup instructions"
-   ```
-
-3. **Quality Checks**:
-
-   ```bash
-   # Run full test suite
-   ./scripts/check-all.sh  # If available, or run manually
-   ```
-
-4. **Create PR**:
-   - Use GitHub's web interface or CLI
-   - Fill out PR template completely
-   - Link relevant issues
-   - Add screenshots for UI changes if applicable
-
-### PR Requirements
-
-- **Clear Title**: Use conventional commit format (`feat:`, `fix:`, `docs:`, etc.)
-- **Description**: Explain what, why, and how
-- **Testing**: Describe how you tested your changes
-- **Documentation**: Update relevant docs
-- **Breaking Changes**: Clearly label and provide migration guide
-
-### Review Process
-
-1. **Automated Checks**: CI/CD pipeline runs all tests
-2. **Code Review**: At least one maintainer review required
-3. **Testing**: Reviewer may request additional tests
-4. **Approval**: PR approved after all checks pass
-
-## 🔧 Development Tools & Scripts
-
-### Useful Aliases
+### Running Tests
 
 ```bash
-# Add to your shell config for convenience
-alias cb="cargo build"
-alias cr="cargo run"
-alias ct="cargo test"
-alias cc="cargo check"
-alias cf="cargo fmt"
-alias cl="cargo clippy"
-alias cw="cargo watch -x run"
-```
+# All tests
+cargo test
 
-### Development Scripts
+# Unit tests only
+cargo test --lib
 
-```bash
-# Full quality check (create as scripts/check-all.sh)
-#!/bin/bash
-set -e
-echo "🔍 Running full quality checks..."
+# Integration tests
+cargo test --test '*'
 
-cargo fmt
-echo "✅ Formatting checked"
-
-cargo clippy --all-targets --all-features
-echo "✅ Clippy passed"
-
-cargo test --all-features
-echo "✅ Tests passed"
-
-cargo audit
-echo "✅ Security audit passed"
-
-echo "🎉 All checks passed!"
-```
-
-## 🐛 Debugging & Troubleshooting
-
-### Common Issues
-
-1. **Build Failures**:
-
-   ```bash
-   # Clean build
-   cargo clean && cargo build
-   
-   # Update dependencies
-   cargo update
-   ```
-
-2. **Database Issues**:
-
-   ```bash
-   # Reset database
-   rm bot.db && cargo run
-   
-   # Check migrations
-   cargo sqlx migrate info
-   ```
-
-3. **Container Issues**:
-
-   ```bash
-   # Rebuild container
-   podman rmi clear_urls_bot
-   ./podman-deploy.sh build
-   ```
-
-### Logging Configuration
-
-```bash
-# Enable debug logging
-export RUST_LOG=debug
-export RUST_LOG_STYLE=always
-cargo run
-
-# Specific module logging
-export RUST_LOG=clear_urls_bot::sanitizer=trace,clear_urls_bot::bot=debug
-cargo run
-```
-
-## 📋 Issue Reporting
-
-### Bug Reports
-
-Use the issue template with:
-
-- **Environment**: Rust version, OS, database type
-- **Steps to Reproduce**: Clear, minimal reproduction steps
-- **Expected Behavior**: What should happen
-- **Actual Behavior**: What actually happens
-- **Logs**: Relevant log output
-
-### Feature Requests
-
-Provide:
-
-- **Use Case**: Why this feature is needed
-- **Proposed Solution**: How you envision it working
-- **Alternatives Considered**: Other approaches you've thought of
-- **Additional Context**: Any other relevant information
-
-## 🏆 Recognition
-
-Contributors are recognized in:
-
-- **README.md**: Contributors section
-- **CHANGELOG.md**: Credits for specific contributions
-- **Releases**: Special thanks for major contributions
-
-## ⚖️ Code of Conduct
-
-We are committed to providing a welcoming and inclusive environment. Please:
-
-- **Be Respectful**: Treat all community members with respect
-- **Be Inclusive**: Welcome newcomers and help them learn
-- **Be Constructive**: Provide helpful, constructive feedback
-- **Be Professional**: Maintain professional conduct in all interactions
-
-For full details, see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-
-## 🤝 Getting Help
-
-- **Discussions**: Use GitHub Discussions for questions
-- **Issues**: For bugs and feature requests
-- **Documentation**: Check existing docs first
-- **Maintainers**: Tag maintainainers for urgent issues
-
-Thank you for contributing to ClearURLs Bot! Every contribution helps make the project better. 🎉
----
-
-## 🆕 New Features & Testing
-
-### Testing Infrastructure
-
-The project now includes comprehensive test suites:
-
-````bash
-# Run all tests
-cargo test --release
-
-# Run specific test modules
+# Specific test suite
 cargo test sanitizer_tests
 cargo test database_tests
 cargo test bot_commands_tests
 
-# Run tests with output
+# Verbose output
 cargo test -- --show-output --nocapture
-````
+```
 
-### Test Organization
+### Test Infrastructure
 
-- **tests/common/**: Shared test utilities and fixtures
-- **tests/sanitizer_tests.rs**: URL sanitization and rule engine tests
-- **tests/database_tests.rs**: Database operations and migrations tests
-- **tests/bot_commands_tests.rs**: Bot command handler tests
+- Each integration test gets its own **isolated in-memory SQLite database** using `sqlite:file:testdb{id}?mode=memory&cache=shared`
+- The `tests/common/mod.rs` module provides shared fixtures (`setup_test_db()`, `test_config()`, sample URLs)
+- Sanitizer tests fetch real ClearURLs rules from the internet — they require network access
 
-### Feature Flags System
+### Writing Tests
 
-New feature flag infrastructure allows per-user feature enablement:
+```rust
+// Unit test (inline in source file)
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-````rust
-// Enable a feature for a user
-db.set_feature_flag(user_id, "ai_engine", true).await?;
-
-// Check if feature is enabled
-if db.is_feature_enabled(user_id, "experimental_scanner").await? {
-    // Use experimental feature
+    #[test]
+    fn test_something() {
+        assert_eq!(my_function(), expected);
+    }
 }
-````
 
-Available features:
+// Integration test (in tests/ directory)
+mod common;
+use common::setup_test_db;
 
-- `ai_engine`: AI-powered URL sanitization
-- `url_scanner`: VirusTotal/URLScan integration
-- `advanced_stats`: Extended statistics tracking
-
-### Rate Limiting
-
-Database-level rate limiting protects against abuse:
-
-````rust
-// Check rate limit (50 actions per hour)
-if !db.check_rate_limit(user_id, 50, 3600).await? {
-    bot.send_message(chat_id, "Rate limit exceeded. Please wait.").await?;
-    return Ok(());
+#[tokio::test]
+async fn test_db_operation() {
+    let db = setup_test_db().await;
+    // ... test code
 }
-````
+```
 
-### Health Check Endpoint
+## Code Quality Standards
 
-Monitor bot health programmatically:
+- **Clippy**: All warnings must be addressed or explicitly allowed in `clippy.toml`
+- **Formatting**: `cargo fmt --all` — enforced in CI
+- **Error Handling**: Use `Result` types, avoid `unwrap()` in production code
+- **Logging**: Use `tracing` with appropriate levels (`info!`, `debug!`, `warn!`, `error!`)
 
-````rust
-use clear_urls_bot::health::HealthCheck;
+## Project Structure
 
-let health = HealthCheck::new("1.4.0");
-let status = health.check(&db).await?;
+```
+src/
+├── presentation/telegram/  # Bot handlers, UI, settings, security scans
+├── sanitizer/              # URL cleaning engine
+├── redirects/              # Alternative frontend detection
+├── db/                     # Database layer
+├── shared/                 # Error types, security utils
+├── application/            # Clean Architecture skeleton
+├── domain/                 # Entities and repository interfaces
+├── infrastructure/         # Repository implementations
+├── config.rs               # Configuration
+├── main.rs                 # Orchestrator (~50 lines)
+└── lib.rs                  # Module declarations
+```
 
-// Returns JSON:
-// {
-//   "status": "healthy",
-//   "version": "1.4.0",
-//   "uptime_seconds": 3600,
-//   "database": {"connected": true, "response_time_ms": 5},
-//   "timestamp": 1234567890
-// }
-````
+### Adding New Features
 
-### CI/CD Pipeline
+1. **New commands/handlers** — Add to `presentation/telegram/handlers.rs`
+2. **UI helpers** — Add to `presentation/telegram/helpers.rs` (with tests)
+3. **Sanitization rules** — Add to `sanitizer/rule_engine.rs`
+4. **Database operations** — Add to `db/implementation.rs` and update `db/models.rs` if needed
+5. **New languages** — Add translations in `i18n.rs` (see [LANGUAGES.md](LANGUAGES.md))
+6. **Configuration** — Add to `config.rs` with validation and update `.env.example`
 
-GitHub Actions automatically runs:
+## Pull Request Process
 
-- ✅ Code formatting check (`cargo fmt`)
-- ✅ Linting (`cargo clippy`)
-- ✅ Test suite (`cargo test`)
-- ✅ Security audit (`cargo audit`)
-- ✅ Markdown linting
-- ✅ Container image build (on main branch)
+1. **Create branch** — descriptive name: `feat/url-sanitization`, `fix/db-connection`
+2. **Commit frequently** — descriptive messages following [conventional commits](https://www.conventionalcommits.org/)
+3. **Run quality checks** — `cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test`
+4. **Create PR** — fill out description, link issues, describe testing
 
-### Backup Best Practices
+### PR Requirements
 
-````bash
-# Manual backup
-./backup_db.sh
+- Clear title using conventional commit format (`feat:`, `fix:`, `docs:`, `refactor:`, etc.)
+- Description explaining what, why, and how
+- All CI checks pass
+- Documentation updated if applicable
 
-# Automated daily backup (add to crontab)
-0 2 * * * /path/to/clearurlsbot/backup_db.sh
+## Debugging & Troubleshooting
 
-# Custom retention
-BACKUP_RETENTION_DAYS=60 MAX_BACKUPS=20 ./backup_db.sh
-````
+### Common Issues
 
-See [crontab.example](crontab.example) for complete automation examples.
+```bash
+# Clean rebuild
+cargo clean && cargo build
+
+# Update dependencies
+cargo update
+
+# Reset database
+rm bot.db && cargo run
+
+# Rebuild container
+podman rmi clear_urls_bot
+./podman-deploy.sh build
+```
+
+### Logging Configuration
+
+```bash
+# Debug logging
+RUST_LOG=debug cargo run
+
+# Specific module logging
+RUST_LOG=clear_urls_bot::sanitizer=trace,clear_urls_bot::presentation::telegram=debug cargo run
+```
+
+## Issue Reporting
+
+### Bug Reports
+
+Include:
+- **Environment**: Rust version, OS, database type
+- **Steps to Reproduce**: Clear, minimal reproduction steps
+- **Expected vs Actual Behavior**
+- **Logs**: Relevant output with `RUST_LOG=debug`
+
+### Feature Requests
+
+Provide:
+- **Use Case**: Why this feature is needed
+- **Proposed Solution**: How you envision it working
+- **Alternatives Considered**
 
 ---
+
+Thank you for contributing to ClearURLs Bot!

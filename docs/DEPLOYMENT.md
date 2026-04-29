@@ -34,7 +34,7 @@ This comprehensive guide covers all deployment scenarios for ClearURLs Bot, from
 
 **Core:**
 
-- [Rust](https://www.rust-lang.org/tools/install) 1.85+ (MSRV)
+- Rust 1.88+ (MSRV)
 - [Podman](https://podman.io/getting-started/installation) 3.0+
 
 **Optional:**
@@ -45,10 +45,13 @@ This comprehensive guide covers all deployment scenarios for ClearURLs Bot, from
 
 ### Novità
 
-- Gestione errori migliorata e logging avanzato
-- Modularità estesa (validazione, sanitizzazione, internazionalizzazione)
-- Test automatizzati e cache per performance
-- Internazionalizzazione dinamica via file JSON
+- Gestione errori migliorata e logging avanzato con `tracing`
+- 15 lingue supportate con rilevamento automatico (whatlang)
+- Selettore lingua a griglia 4x4 nella tastiera inline
+- Test automatizzati (90 totali) e cache per performance
+- Sanitizzazione input consolidata e validazione URL corretta
+- Riserva porte Render con parsing numerico corretto
+- Compatibilità PostgreSQL/SQLite per tutte le query
 
 ## ⚙️ Environment Configuration
 
@@ -193,30 +196,39 @@ DATABASE_URL=postgresql://username:password@localhost:5432/clearurls_bot
    cp .env.example .env.prod
    ```
 
-### Security Best Practices
+## 🏠 Local Development
 
-1. Tutti gli input utente sono validati e sanificati lato bot.
-2. Rate limiting anti-flood: massimo 1 richiesta/secondo per utente.
-3. Le azioni amministrative sono protette da controllo su `ADMIN_ID`.
-4. Nessun dato sensibile (token, chiavi, dati personali) viene mai loggato.
-5. Le variabili di ambiente `.env` devono avere permessi restrittivi (`chmod 600 .env`).
-6. I log oscurano dati sensibili tramite redazione automatica.
-7. Consigliato eseguire il bot in container rootless (Podman) e usare database PostgreSQL in produzione.
-
-## 🛡️ Sicurezza e Best Practice
-
-- **VirusTotal Security**: 🆕 Real-time malware detection with 70+ antivirus engines (see [docs/VIRUSTOTAL.md](VIRUSTOTAL.md))
+- **VirusTotal Security**: Real-time malware detection with 70+ antivirus engines (see [docs/VIRUSTOTAL.md](VIRUSTOTAL.md))
 - Rate limiting anti-flood: massimo 1 richiesta/secondo per utente
-- Validazione e sanificazione input su tutti i messaggi/callback
+- Validazione e sanificazione input su tutti i messaggi/callback (codice consolidato)
 - Controllo permessi sistematico per azioni admin
 - Protezione dati sensibili nei log e nelle variabili di ambiente
 - Consigliato eseguire il bot in container rootless (Podman) e usare database PostgreSQL in produzione
 - Backup automatico DB: script backup_db.sh, cron consigliato
-- Logging avanzato: solo admin riceve log critici via Telegram
+- Logging avanzato con `tracing`: solo admin riceve log critici via Telegram
 - Notifiche automatiche errori: messaggio all'admin in caso di panic/errori
-- Caching risultati pulizia: cache interna per URL ripetuti
-- Ottimizzazione DB/async: query asincrone, pooling, batch
-- Webhook HTTPS: pronto per refactor, supporto via env
+- Caching risultati pulizia: cache interna per URL ripetuti (moka, 10k capacità)
+- Query asincrone, pooling, batch operations
+- Webhook HTTPS: pronto per produzione, supporto via env
+- Validazione `WEBHOOK_SECRET`: 16-256 caratteri, alfanumerici + `_` + `-`
+
+## 🌐 Lingue Supportate
+
+Il bot supporta **15 lingue** con rilevamento automatico:
+
+| Code | Language | Native | Code | Language | Native |
+|------|----------|--------|------|----------|--------|
+| `it` | Italian | Italiano | `ar` | Arabic | العربية |
+| `en` | English | English | `hi` | Hindi | हिन्दी |
+| `es` | Spanish | Español | `zh` | Chinese | 中文 |
+| `fr` | French | Français | `ja` | Japanese | 日本語 |
+| `de` | German | Deutsch | `ko` | Korean | 한국어 |
+| `pt` | Portuguese | Português | `tr` | Turkish | Türkçe |
+| `ru` | Russian | Русский | `nl` | Dutch | Nederlands |
+| `pl` | Polish | Polski | | | |
+
+Gli utenti possono cambiare lingua tramite `/setlang <code>` o dal menu Impostazioni → Lingua.
+Vedi [LANGUAGES.md](../LANGUAGES.md) per la guida completa.
 
 ## 🏠 Local Development
 

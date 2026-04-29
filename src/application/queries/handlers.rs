@@ -60,7 +60,7 @@ impl GetWhitelistQueryHandlerImpl {
 
 #[async_trait]
 impl GetWhitelistQueryHandler for GetWhitelistQueryHandlerImpl {
-    async fn handle(&self, _query: GetWhitelistQuery) -> Result<Vec<String>> {
-        self.whitelist_repository.get_whitelist().await
+    async fn handle(&self, query: GetWhitelistQuery) -> Result<Vec<String>> {
+        self.whitelist_repository.get_whitelist(query.user_id).await
     }
 }

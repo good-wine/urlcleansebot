@@ -3,7 +3,7 @@
 # ====================================
 /target
 **/target/
-Cargo.lock  # Uncomment if this is a library crate
+Cargo.lock
 debug/
 *.pdb
 *.o
@@ -11,6 +11,9 @@ debug/
 *.so
 *.dylib
 *.dll
+
+# Rust analyzer
+.rust-analyzer/
 
 # ====================================
 # Database files (SQLite)

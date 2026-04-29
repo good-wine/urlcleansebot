@@ -2,14 +2,16 @@
 //!
 //! This module provides security-related utilities including:
 //! - Input validation and sanitization
-//! - Rate limiting
+//! - Rate limiting (sync and async variants)
 //! - Content security checks
 
+use moka::future::Cache;
+use moka::sync::Cache as SyncCache;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use std::collections::HashMap;
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use sha2::{Digest, Sha256};
+use std::sync::Arc;
+use std::time::Duration;
 
 /// Maximum URL length to prevent DoS attacks
 pub const MAX_URL_LENGTH: usize = 2048;
@@ -17,83 +19,95 @@ pub const MAX_URL_LENGTH: usize = 2048;
 /// Maximum message length for Telegram
 pub const MAX_MESSAGE_LENGTH: usize = 4096;
 
-/// Rate limiting: max requests per minute
+/// Rate limiting: max requests per minute (async variant)
 pub const RATE_LIMIT_REQUESTS: u32 = 10;
 
-/// Rate limiting window in seconds
+/// Rate limiting window in seconds (async variant)
 pub const RATE_LIMIT_WINDOW: u64 = 60;
 
-/// Global rate limiter storage
-static RATE_LIMITER: Lazy<Mutex<HashMap<i64, Vec<Instant>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+// ── Async rate limiter (for query handlers) ───────────────────────────────
 
-/// Check if user is within rate limits
-pub fn check_rate_limit(user_id: i64) -> Result<(), SecurityError> {
-    let mut limiter = RATE_LIMITER.lock().unwrap();
-    let now = Instant::now();
-    let window_start = now - Duration::from_secs(RATE_LIMIT_WINDOW);
+static RATE_LIMITER_CACHE: Lazy<Cache<i64, Arc<u32>>> = Lazy::new(|| {
+    Cache::builder()
+        .max_capacity(100_000)
+        .time_to_live(std::time::Duration::from_secs(RATE_LIMIT_WINDOW))
+        .build()
+});
 
-    // Get or create user entry
-    let timestamps = limiter.entry(user_id).or_default();
+pub async fn check_rate_limit(user_id: i64) -> Result<(), SecurityError> {
+    let current = RATE_LIMITER_CACHE
+        .get(&user_id)
+        .await
+        .unwrap_or_else(|| Arc::new(0));
+    let count = *current + 1;
 
-    // Remove old timestamps outside the window
-    timestamps.retain(|&time| time > window_start);
-
-    // Check if under limit
-    if timestamps.len() >= RATE_LIMIT_REQUESTS as usize {
+    if count > RATE_LIMIT_REQUESTS {
         return Err(SecurityError::RateLimitExceeded);
     }
 
-    // Add current timestamp
-    timestamps.push(now);
+    RATE_LIMITER_CACHE.insert(user_id, Arc::new(count)).await;
     Ok(())
 }
 
-/// Regex for URL validation
-static URL_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^https?://[^\s/$.?#].[^\s]*$").unwrap());
+// ── Sync rate limiter (for message handlers) ──────────────────────────────
 
-/// Regex for detecting potentially malicious patterns
-static MALICIOUS_PATTERNS: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)(javascript:|data:|vbscript:|file:|ftp:|mailto:)").unwrap());
+pub struct RateLimiter {
+    cache: SyncCache<i64, Arc<()>>,
+}
 
-/// Validate and sanitize URL input
-pub fn validate_url(url: &str) -> Result<String, SecurityError> {
-    // Check length
-    if url.len() > MAX_URL_LENGTH {
-        return Err(SecurityError::UrlTooLong);
-    }
-
-    // Check for empty or whitespace-only
-    let trimmed = url.trim();
-    if trimmed.is_empty() {
-        return Err(SecurityError::EmptyInput);
-    }
-
-    // Check for malicious patterns
-    if MALICIOUS_PATTERNS.is_match(trimmed) {
-        return Err(SecurityError::MaliciousContent);
-    }
-
-    // Basic URL validation
-    if !URL_REGEX.is_match(trimmed) {
-        return Err(SecurityError::InvalidUrl);
-    }
-
-    // URL decode to check for encoded malicious content
-    match urlencoding::decode(trimmed) {
-        Ok(decoded) => {
-            if MALICIOUS_PATTERNS.is_match(&decoded) {
-                return Err(SecurityError::MaliciousContent);
-            }
-            Ok(decoded.to_string())
+impl RateLimiter {
+    pub fn new(min_interval: Duration) -> Self {
+        let ttl = min_interval * 3;
+        Self {
+            cache: SyncCache::builder()
+                .max_capacity(100_000)
+                .time_to_live(ttl)
+                .build(),
         }
-        Err(_) => Err(SecurityError::InvalidUrl),
+    }
+
+    pub fn check(&self, user_id: i64) -> bool {
+        match self.cache.get(&user_id) {
+            Some(_) => false,
+            None => {
+                self.cache.insert(user_id, Arc::new(()));
+                true
+            }
+        }
     }
 }
 
-/// Sanitize text for Telegram messages to prevent injection
+pub static RATE_LIMITER: Lazy<RateLimiter> = Lazy::new(|| RateLimiter::new(Duration::from_secs(1)));
+
+// ── Input sanitization ─────────────────────────────────────────────────────
+
+static SANITIZE_LIMIT: usize = 4000;
+
+fn sanitize_string(input: &str) -> String {
+    let trimmed = input.trim();
+    let has_control = trimmed.chars().any(|c| c.is_control());
+    let needs_truncation = trimmed.len() > SANITIZE_LIMIT;
+
+    if !has_control && !needs_truncation {
+        return trimmed.to_string();
+    }
+
+    let mut s: String = trimmed.chars().filter(|c| !c.is_control()).collect();
+    if s.len() > SANITIZE_LIMIT {
+        s = s.chars().take(SANITIZE_LIMIT).collect();
+    }
+    s
+}
+
+pub fn sanitize_input(input: &str) -> String {
+    sanitize_string(input)
+}
+
+pub fn sanitize_callback(input: &str) -> String {
+    sanitize_string(input)
+}
+
 pub fn sanitize_telegram_text(text: &str) -> String {
-    // Remove or escape potentially dangerous characters
     text.chars()
         .map(|c| match c {
             '<' => "&lt;".to_string(),
@@ -106,7 +120,43 @@ pub fn sanitize_telegram_text(text: &str) -> String {
         .collect()
 }
 
-/// Validate user ID (Telegram user IDs are positive i64)
+// ── Validation ─────────────────────────────────────────────────────────────
+
+static URL_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^https?://[^\s/$.?#]+\.[^\s]*$").unwrap());
+
+static MALICIOUS_PATTERNS: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)(javascript:|data:|vbscript:|file:|ftp:|mailto:)").unwrap());
+
+pub fn validate_url(url: &str) -> Result<String, SecurityError> {
+    if url.len() > MAX_URL_LENGTH {
+        return Err(SecurityError::UrlTooLong);
+    }
+
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err(SecurityError::EmptyInput);
+    }
+
+    if MALICIOUS_PATTERNS.is_match(trimmed) {
+        return Err(SecurityError::MaliciousContent);
+    }
+
+    if !URL_REGEX.is_match(trimmed) {
+        return Err(SecurityError::InvalidUrl);
+    }
+
+    match urlencoding::decode(trimmed) {
+        Ok(decoded) => {
+            if MALICIOUS_PATTERNS.is_match(&decoded) {
+                return Err(SecurityError::MaliciousContent);
+            }
+            Ok(decoded.to_string())
+        }
+        Err(_) => Err(SecurityError::InvalidUrl),
+    }
+}
+
 pub fn validate_user_id(user_id: i64) -> Result<i64, SecurityError> {
     if user_id <= 0 {
         return Err(SecurityError::InvalidUserId);
@@ -114,12 +164,26 @@ pub fn validate_user_id(user_id: i64) -> Result<i64, SecurityError> {
     Ok(user_id)
 }
 
-/// Regex for domain validation
+pub fn is_admin(user_id: i64, admin_id: i64) -> bool {
+    user_id == admin_id
+}
+
+static USER_ID_HASH_SALT: Lazy<String> = Lazy::new(|| {
+    std::env::var("USER_ID_HASH_SALT").unwrap_or_else(|_| "clearurlsbot-default-salt".to_string())
+});
+
+pub fn hash_user_id(user_id: i64) -> String {
+    let salted = format!("{}:{}", *USER_ID_HASH_SALT, user_id);
+    let mut hasher = Sha256::new();
+    hasher.update(salted.as_bytes());
+    let result = hasher.finalize();
+    format!("{:x}", result)
+}
+
 static DOMAIN_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$").unwrap()
 });
 
-/// Validate domain name
 pub fn validate_domain(domain: &str) -> Result<String, SecurityError> {
     let trimmed = domain.trim().to_lowercase();
 
@@ -128,16 +192,13 @@ pub fn validate_domain(domain: &str) -> Result<String, SecurityError> {
     }
 
     if trimmed.len() > 253 {
-        // Max domain length per RFC
         return Err(SecurityError::ContentTooLong);
     }
 
-    // Check for malicious patterns
     if MALICIOUS_PATTERNS.is_match(&trimmed) {
         return Err(SecurityError::MaliciousContent);
     }
 
-    // Basic domain validation
     if !DOMAIN_REGEX.is_match(&trimmed) {
         return Err(SecurityError::InvalidDomain);
     }
@@ -145,33 +206,34 @@ pub fn validate_domain(domain: &str) -> Result<String, SecurityError> {
     Ok(trimmed)
 }
 
-/// Security error types
+pub fn is_safe_url_scheme(url: &str) -> bool {
+    let lower = url.trim().to_lowercase();
+    lower.starts_with("http://") || lower.starts_with("https://")
+}
+
+// ── Error types ────────────────────────────────────────────────────────────
+
 #[derive(Debug, thiserror::Error)]
 pub enum SecurityError {
     #[error("URL is too long")]
     UrlTooLong,
-
     #[error("Input is empty")]
     EmptyInput,
-
     #[error("Invalid URL format")]
     InvalidUrl,
-
     #[error("Invalid domain format")]
     InvalidDomain,
-
     #[error("Malicious content detected")]
     MaliciousContent,
-
     #[error("Invalid user ID")]
     InvalidUserId,
-
     #[error("Content is too long")]
     ContentTooLong,
-
     #[error("Rate limit exceeded")]
     RateLimitExceeded,
 }
+
+// ── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
