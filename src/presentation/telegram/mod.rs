@@ -3,6 +3,7 @@
 //! Contains all Telegram-specific handlers, helpers, and UI logic.
 //! Organized into submodules for better maintainability.
 
+pub mod commands;
 pub mod handlers;
 pub mod helpers;
 pub mod security_scan;
