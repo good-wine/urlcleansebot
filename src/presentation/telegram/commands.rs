@@ -5,6 +5,9 @@
 use teloxide::prelude::*;
 use teloxide::types::{ChatId, ParseMode, ReplyParameters};
 use teloxide::utils::html;
+use tracing::error;
+
+use crate::shared::error::{AppError, AppResult};
 
 use crate::db::Db;
 use crate::db::models::UserConfig;
@@ -17,7 +20,7 @@ use super::security_scan;
 use super::settings;
 
 /// Represents a command execution result.
-pub type CommandResult = Result<(), teloxide::RequestError>;
+pub type CommandResult = AppResult<()>;
 
 /// Handles the `/start` command.
 ///
@@ -31,7 +34,11 @@ pub async fn handle_start(bot: &Bot, chat_id: ChatId, user_id: i64, tr: &Transla
     let msg = tr.welcome.replace("{}", &user_id.to_string());
     bot.send_message(chat_id, msg)
         .parse_mode(ParseMode::Html)
-        .await?;
+        .await
+        .map_err(|e| {
+            error!(?e, "Errore nell'invio del messaggio di benvenuto");
+            AppError::Telegram(e)
+        })?;
     Ok(())
 }
 
@@ -92,12 +99,19 @@ pub async fn handle_stats(
                 total_cleaned
             )
         }
-        Err(_) => tr.s_not_found.to_string(),
+        Err(e) => {
+            error!(?e, "Errore nel recupero delle statistiche utente");
+            tr.s_not_found.to_string()
+        }
     };
 
     bot.send_message(chat_id, stats_text)
         .parse_mode(ParseMode::Html)
-        .await?;
+        .await
+        .map_err(|e| {
+            error!(?e, "Errore nell'invio delle statistiche");
+            AppError::Telegram(e)
+        })?;
     Ok(())
 }
 
@@ -131,25 +145,37 @@ pub async fn handle_history(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db) -
             }
             text
         }
-        Err(_) => "\u{274c} Errore nel caricamento della cronologia".to_string(),
+        Err(e) => {
+            error!(?e, "Errore nel caricamento della cronologia");
+            "\u{274c} Errore nel caricamento della cronologia".to_string()
+        }
     };
 
     bot.send_message(chat_id, history_text)
         .parse_mode(ParseMode::Html)
-        .await?;
+        .await
+        .map_err(|e| {
+            error!(?e, "Errore nell'invio della cronologia");
+            AppError::Telegram(e)
+        })?;
     Ok(())
 }
 
 /// Handles the `/leaderboard` command.
 pub async fn handle_leaderboard(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Translations) -> CommandResult {
-    match db.get_top_users(10).await {
+    let result = db.get_top_users(10).await;
+    match result {
         Ok(top_users) if top_users.is_empty() => {
             bot.send_message(
                 chat_id,
                 "\u{1f3c6} <b>Leaderboard</b>\n\nAncora nessun utente. Invia il primo URL!",
             )
             .parse_mode(ParseMode::Html)
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(?e, "Errore nell'invio leaderboard vuota");
+                AppError::Telegram(e)
+            })?;
         }
         Ok(top_users) => {
             let mut msg = String::from("\u{1f3c6} <b>Top 10 Pulitori</b>\n\n");
@@ -164,11 +190,20 @@ pub async fn handle_leaderboard(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Transl
             }
             bot.send_message(chat_id, msg)
                 .parse_mode(ParseMode::Html)
-                .await?;
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio leaderboard");
+                    AppError::Telegram(e)
+                })?;
         }
-        Err(_) => {
+        Err(e) => {
+            error!(?e, "Errore nel caricamento della leaderboard");
             bot.send_message(chat_id, "\u{274c} Errore nel caricamento della leaderboard")
-                .await?;
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio errore leaderboard");
+                    AppError::Telegram(e)
+                })?;
         }
     }
     Ok(())
@@ -176,14 +211,19 @@ pub async fn handle_leaderboard(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Transl
 
 /// Handles the `/trending` command.
 pub async fn handle_trending(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Translations) -> CommandResult {
-    match db.get_top_links(10).await {
+    let result = db.get_top_links(10).await;
+    match result {
         Ok(top_links) if top_links.is_empty() => {
             bot.send_message(
                 chat_id,
                 "\u{1f4c8} <b>URL Trending</b>\n\nAncora nessun URL processato",
             )
             .parse_mode(ParseMode::Html)
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(?e, "Errore nell'invio trending vuoto");
+                AppError::Telegram(e)
+            })?;
         }
         Ok(top_links) => {
             let mut msg = String::from("\u{1f4c8} <b>Top 10 URL Più Puliti</b>\n\n");
@@ -197,11 +237,20 @@ pub async fn handle_trending(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Translati
             }
             bot.send_message(chat_id, msg)
                 .parse_mode(ParseMode::Html)
-                .await?;
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio trending");
+                    AppError::Telegram(e)
+                })?;
         }
-        Err(_) => {
+        Err(e) => {
+            error!(?e, "Errore nel caricamento dei trending");
             bot.send_message(chat_id, "\u{274c} Errore nel caricamento dei trending")
-                .await?;
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio errore trending");
+                    AppError::Telegram(e)
+                })?;
         }
     }
     Ok(())
@@ -209,14 +258,19 @@ pub async fn handle_trending(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Translati
 
 /// Handles the `/domains` command for per-domain statistics.
 pub async fn handle_domains(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db) -> CommandResult {
-    match db.get_domain_cleanup_stats(user_id).await {
+    let result = db.get_domain_cleanup_stats(user_id).await;
+    match result {
         Ok(domains) if domains.is_empty() => {
             bot.send_message(
                 chat_id,
                 "\u{1f310} <b>Statistiche per Dominio</b>\n\nAncora nessun URL processato",
             )
             .parse_mode(ParseMode::Html)
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(?e, "Errore nell'invio domini vuoti");
+                AppError::Telegram(e)
+            })?;
         }
         Ok(domains) => {
             let mut msg = String::from("\u{1f310} <b>Tuoi Domini Più Puliti</b>\n\n");
@@ -228,14 +282,23 @@ pub async fn handle_domains(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db) -
             }
             bot.send_message(chat_id, msg)
                 .parse_mode(ParseMode::Html)
-                .await?;
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio domini");
+                    AppError::Telegram(e)
+                })?;
         }
-        Err(_) => {
+        Err(e) => {
+            error!(?e, "Errore nel caricamento delle statistiche per dominio");
             bot.send_message(
                 chat_id,
                 "\u{274c} Errore nel caricamento delle statistiche per dominio",
             )
-            .await?;
+            .await
+            .map_err(|e| {
+                error!(?e, "Errore nell'invio errore domini");
+                AppError::Telegram(e)
+            })?;
         }
     }
     Ok(())
@@ -245,7 +308,11 @@ pub async fn handle_domains(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db) -
 pub async fn handle_help(bot: &Bot, chat_id: ChatId, tr: &Translations) -> CommandResult {
     bot.send_message(chat_id, tr.help_text.clone())
         .parse_mode(ParseMode::Html)
-        .await?;
+        .await
+        .map_err(|e| {
+            error!(?e, "Errore nell'invio dell'help");
+            AppError::Telegram(e)
+        })?;
     Ok(())
 }
 
@@ -266,13 +333,18 @@ pub async fn handle_privacy(bot: &Bot, chat_id: ChatId, tr: &Translations) -> Co
     );
     bot.send_message(chat_id, privacy_text)
         .parse_mode(ParseMode::Html)
-        .await?;
+        .await
+        .map_err(|e| {
+            error!(?e, "Errore nell'invio privacy");
+            AppError::Telegram(e)
+        })?;
     Ok(())
 }
 
 /// Handles whitelist display command.
 pub async fn handle_whitelist_show(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db) -> CommandResult {
-    match db.get_whitelist(user_id).await {
+    let result = db.get_whitelist(user_id).await;
+    match result {
         Ok(domains) => {
             let text = if domains.is_empty() {
                 "\u{2b50} <b>La Tua Whitelist</b>\n\nVuota. Aggiungi domini con <code>/whitelist_add</code>"
@@ -288,11 +360,20 @@ pub async fn handle_whitelist_show(bot: &Bot, chat_id: ChatId, user_id: i64, db:
             };
             bot.send_message(chat_id, text)
                 .parse_mode(ParseMode::Html)
-                .await?;
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio whitelist");
+                    AppError::Telegram(e)
+                })?;
         }
-        Err(_) => {
+        Err(e) => {
+            error!(?e, "Errore nel caricamento whitelist");
             bot.send_message(chat_id, "\u{274c} Errore nel caricamento")
-                .await?;
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio errore whitelist");
+                    AppError::Telegram(e)
+                })?;
         }
     }
     Ok(())
@@ -300,7 +381,8 @@ pub async fn handle_whitelist_show(bot: &Bot, chat_id: ChatId, user_id: i64, db:
 
 /// Handles export command for user data.
 pub async fn handle_export(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db) -> CommandResult {
-    match db.get_history(user_id, 50).await {
+    let result = db.get_history(user_id, 50).await;
+    match result {
         Ok(links) => {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -334,11 +416,20 @@ pub async fn handle_export(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db) ->
 
             bot.send_message(chat_id, export_msg)
                 .parse_mode(ParseMode::Html)
-                .await?;
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio export");
+                    AppError::Telegram(e)
+                })?;
         }
-        Err(_) => {
+        Err(e) => {
+            error!(?e, "Errore nell'esportazione");
             bot.send_message(chat_id, "\u{274c} Errore nell'esportazione")
-                .await?;
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio errore export");
+                    AppError::Telegram(e)
+                })?;
         }
     }
     Ok(())
