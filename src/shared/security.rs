@@ -177,7 +177,8 @@ pub fn hash_user_id(user_id: i64) -> String {
     let mut hasher = Sha256::new();
     hasher.update(salted.as_bytes());
     let result = hasher.finalize();
-    format!("{:x}", result)
+    // Convert hash result to hex string manually
+    result.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 static DOMAIN_REGEX: Lazy<Regex> = Lazy::new(|| {

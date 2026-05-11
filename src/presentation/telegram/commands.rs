@@ -116,7 +116,7 @@ pub async fn handle_stats(
 }
 
 /// Handles the `/history` command to show cleaned URL history.
-pub async fn handle_history(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db) -> CommandResult {
+pub async fn handle_history(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _tr: &Translations) -> CommandResult {
     let history_text = match db.get_history(user_id, 10).await {
         Ok(links) if links.is_empty() => {
             "\u{1f550} <b>Cronologia Vuota</b>\n\nAncora non hai pulito nessun URL".to_string()
@@ -257,7 +257,7 @@ pub async fn handle_trending(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Translati
 }
 
 /// Handles the `/domains` command for per-domain statistics.
-pub async fn handle_domains(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db) -> CommandResult {
+pub async fn handle_domains(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _tr: &Translations) -> CommandResult {
     let result = db.get_domain_cleanup_stats(user_id).await;
     match result {
         Ok(domains) if domains.is_empty() => {
@@ -380,7 +380,7 @@ pub async fn handle_whitelist_show(bot: &Bot, chat_id: ChatId, user_id: i64, db:
 }
 
 /// Handles export command for user data.
-pub async fn handle_export(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db) -> CommandResult {
+pub async fn handle_export(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _tr: &Translations) -> CommandResult {
     let result = db.get_history(user_id, 50).await;
     match result {
         Ok(links) => {
@@ -434,3 +434,98 @@ pub async fn handle_export(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db) ->
     }
     Ok(())
 }
+
+/// Handles the `/menu` command to show main keyboard.
+pub async fn handle_menu(bot: &Bot, chat_id: ChatId, tr: &Translations) -> CommandResult {
+    bot.send_message(chat_id, tr.reply_keyboard_opened.clone())
+        .reply_markup(super::helpers::main_reply_keyboard(tr))
+        .parse_mode(ParseMode::Html)
+        .await
+        .map_err(|e| {
+            error!(?e, "Errore nell'invio menu");
+            AppError::Telegram(e)
+        })?;
+    Ok(())
+}
+
+/// Handles the `/hidekbd` command to hide keyboard.
+pub async fn handle_hidekbd(bot: &Bot, chat_id: ChatId) -> CommandResult {
+    bot.send_message(chat_id, "⌨️ Keyboard hidden")
+        .reply_markup(teloxide::types::KeyboardRemove::new())
+        .await
+        .map_err(|e| {
+            error!(?e, "Errore nell'invio hidekbd");
+            AppError::Telegram(e)
+        })?;
+    Ok(())
+}
+
+/// Handles the `/language` command to show language options.
+pub async fn handle_language(bot: &Bot, chat_id: ChatId, tr: &Translations) -> CommandResult {
+    let msg = "🌐 Select language / Seleziona lingua";
+    bot.send_message(chat_id, msg)
+        .parse_mode(ParseMode::Html)
+        .await
+        .map_err(|e| {
+            error!(?e, "Errore nell'invio language");
+            AppError::Telegram(e)
+        })?;
+    Ok(())
+}
+
+/// Handles the `/whitelist` command info.
+pub async fn handle_whitelist(bot: &Bot, chat_id: ChatId, tr: &Translations) -> CommandResult {
+    let msg = "⭐ Whitelist help - Add trusted domains";
+    bot.send_message(chat_id, msg)
+        .parse_mode(ParseMode::Html)
+        .await
+        .map_err(|e| {
+            error!(?e, "Errore nell'invio whitelist");
+            AppError::Telegram(e)
+        })?;
+    Ok(())
+}
+
+/// Handles the `/settings` command.
+pub async fn handle_settings(
+    bot: &Bot,
+    chat_id: ChatId,
+    _user_id: i64,
+    _db: &Db,
+    _config: &crate::config::Config,
+    _tr: &Translations,
+) -> CommandResult {
+    bot.send_message(chat_id, "⚙️ Settings")
+        .parse_mode(ParseMode::Html)
+        .await
+        .map_err(|e| {
+            error!(?e, "Errore nell'invio settings");
+            AppError::Telegram(e)
+        })?;
+    Ok(())
+}
+
+/// Handles the `/limits` command.
+pub async fn handle_limits(
+    bot: &Bot,
+    chat_id: ChatId,
+    user_config: &UserConfig,
+    tr: &Translations,
+) -> CommandResult {
+    let _ = (user_config, tr);  // Silence unused warnings
+    let msg = "⚡ API Limits - Rate limiting info";
+    bot.send_message(chat_id, msg)
+        .parse_mode(ParseMode::Html)
+        .await
+        .map_err(|e| {
+            error!(?e, "Errore nell'invio limits");
+            AppError::Telegram(e)
+        })?;
+    Ok(())
+}
+
+// TODO: Unit tests for command handlers would go here
+// Note: As of May 2026, the command module is still evolving
+// Missing implementations: handle_settings, handle_menu, handle_hidekbd, 
+// handle_language, handle_whitelist, handle_limits
+// See RECOMMENDATIONS_2026_05.md for the full integration plan
