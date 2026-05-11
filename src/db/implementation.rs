@@ -118,6 +118,40 @@ impl Db {
         )
         .execute(&self.pool)
         .await?;
+
+        // Create indexes for performance optimization
+        // These indexes speed up common queries significantly
+        
+        // Index for leaderboard queries (get_top_users)
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_user_configs_cleaned_count ON user_configs(cleaned_count DESC)")
+            .execute(&self.pool)
+            .await?;
+
+        // Index for history retrieval (get_history)
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_cleaned_links_user_timestamp ON cleaned_links(user_id, timestamp DESC)")
+            .execute(&self.pool)
+            .await?;
+
+        // Index for original_url lookups (get_top_links)
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_cleaned_links_original_url ON cleaned_links(original_url)")
+            .execute(&self.pool)
+            .await?;
+
+        // Index for whitelist lookups (get_whitelist)
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_whitelist_urls_user_added_at ON whitelist_urls(user_id, added_at DESC)")
+            .execute(&self.pool)
+            .await?;
+
+        // Index for custom_rules lookups (get_custom_rules)
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_custom_rules_user_id ON custom_rules(user_id)")
+            .execute(&self.pool)
+            .await?;
+
+        // Index for feature_flags lookups
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_feature_flags_user_id ON feature_flags(user_id)")
+            .execute(&self.pool)
+            .await?;
+
         Ok(())
     }
 
