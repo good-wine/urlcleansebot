@@ -3,8 +3,7 @@
 //! Extracts individual command logic from the main handler to improve readability and testability.
 
 use teloxide::prelude::*;
-use teloxide::types::{ChatId, ParseMode, ReplyParameters};
-use teloxide::utils::html;
+use teloxide::types::{ChatId, ParseMode};
 use tracing::error;
 
 use crate::shared::error::{AppError, AppResult};
@@ -12,12 +11,8 @@ use crate::shared::error::{AppError, AppResult};
 use crate::db::Db;
 use crate::db::models::UserConfig;
 use crate::i18n::{self, Translations};
-use crate::sanitizer::{AiEngine, RuleEngine};
-use crate::config::Config;
 
 use super::helpers;
-use super::security_scan;
-use super::settings;
 
 /// Represents a command execution result.
 pub type CommandResult = AppResult<()>;
@@ -30,7 +25,8 @@ pub type CommandResult = AppResult<()>;
 /// * `chat_id` - Target chat ID
 /// * `user_id` - User ID
 /// * `tr` - Translations for current language
-pub async fn handle_start(bot: &Bot, chat_id: ChatId, user_id: i64, tr: &Translations) -> CommandResult {
+pub async fn handle_start(bot: &Bot, chat_id: ChatId, user_id: i64, tr: &Translations, _args: &[&str]) -> CommandResult {
+    let _ = _args;
     let msg = tr.welcome.replace("{}", &user_id.to_string());
     bot.send_message(chat_id, msg)
         .parse_mode(ParseMode::Html)
@@ -48,9 +44,11 @@ pub async fn handle_stats(
     chat_id: ChatId,
     user_id: i64,
     db: &Db,
-    user_config: &UserConfig,
+    _user_config: &UserConfig,
     tr: &Translations,
+    _args: &[&str],
 ) -> CommandResult {
+    let _ = _args;
     let stats_text = match db.get_user_config(user_id).await {
         Ok(config) => {
             let activity_level = (config.cleaned_count.min(100) / 10) as usize;
@@ -116,7 +114,8 @@ pub async fn handle_stats(
 }
 
 /// Handles the `/history` command to show cleaned URL history.
-pub async fn handle_history(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _tr: &Translations) -> CommandResult {
+pub async fn handle_history(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _tr: &Translations, _args: &[&str]) -> CommandResult {
+    let _ = _args;
     let history_text = match db.get_history(user_id, 10).await {
         Ok(links) if links.is_empty() => {
             "\u{1f550} <b>Cronologia Vuota</b>\n\nAncora non hai pulito nessun URL".to_string()
@@ -162,7 +161,8 @@ pub async fn handle_history(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _
 }
 
 /// Handles the `/leaderboard` command.
-pub async fn handle_leaderboard(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Translations) -> CommandResult {
+pub async fn handle_leaderboard(bot: &Bot, chat_id: ChatId, db: &Db, _tr: &Translations, _args: &[&str]) -> CommandResult {
+    let _ = _args;
     let result = db.get_top_users(10).await;
     match result {
         Ok(top_users) if top_users.is_empty() => {
@@ -210,7 +210,8 @@ pub async fn handle_leaderboard(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Transl
 }
 
 /// Handles the `/trending` command.
-pub async fn handle_trending(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Translations) -> CommandResult {
+pub async fn handle_trending(bot: &Bot, chat_id: ChatId, db: &Db, _tr: &Translations, _args: &[&str]) -> CommandResult {
+    let _ = _args;
     let result = db.get_top_links(10).await;
     match result {
         Ok(top_links) if top_links.is_empty() => {
@@ -257,7 +258,8 @@ pub async fn handle_trending(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Translati
 }
 
 /// Handles the `/domains` command for per-domain statistics.
-pub async fn handle_domains(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _tr: &Translations) -> CommandResult {
+pub async fn handle_domains(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _tr: &Translations, _args: &[&str]) -> CommandResult {
+    let _ = _args;
     let result = db.get_domain_cleanup_stats(user_id).await;
     match result {
         Ok(domains) if domains.is_empty() => {
@@ -305,8 +307,9 @@ pub async fn handle_domains(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _
 }
 
 /// Handles the `/help` command.
-pub async fn handle_help(bot: &Bot, chat_id: ChatId, tr: &Translations) -> CommandResult {
-    bot.send_message(chat_id, tr.help_text.clone())
+pub async fn handle_help(bot: &Bot, chat_id: ChatId, tr: &Translations, _args: &[&str]) -> CommandResult {
+    let _ = _args;
+    bot.send_message(chat_id, tr.help_text)
         .parse_mode(ParseMode::Html)
         .await
         .map_err(|e| {
@@ -317,7 +320,8 @@ pub async fn handle_help(bot: &Bot, chat_id: ChatId, tr: &Translations) -> Comma
 }
 
 /// Handles the `/privacy` command.
-pub async fn handle_privacy(bot: &Bot, chat_id: ChatId, tr: &Translations) -> CommandResult {
+pub async fn handle_privacy(bot: &Bot, chat_id: ChatId, _tr: &Translations, _args: &[&str]) -> CommandResult {
+    let _ = _args;
     let privacy_text = format!(
         "<b>🔒 Privacy</b>\n\n\
         Protezione dei dati GDPR compliant\n\n\
@@ -342,7 +346,8 @@ pub async fn handle_privacy(bot: &Bot, chat_id: ChatId, tr: &Translations) -> Co
 }
 
 /// Handles whitelist display command.
-pub async fn handle_whitelist_show(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db) -> CommandResult {
+pub async fn handle_whitelist_show(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _args: &[&str]) -> CommandResult {
+    let _ = _args;
     let result = db.get_whitelist(user_id).await;
     match result {
         Ok(domains) => {
@@ -380,7 +385,8 @@ pub async fn handle_whitelist_show(bot: &Bot, chat_id: ChatId, user_id: i64, db:
 }
 
 /// Handles export command for user data.
-pub async fn handle_export(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _tr: &Translations) -> CommandResult {
+pub async fn handle_export(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _tr: &Translations, _args: &[&str]) -> CommandResult {
+    let _ = _args;
     let result = db.get_history(user_id, 50).await;
     match result {
         Ok(links) => {
@@ -436,8 +442,9 @@ pub async fn handle_export(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _t
 }
 
 /// Handles the `/menu` command to show main keyboard.
-pub async fn handle_menu(bot: &Bot, chat_id: ChatId, tr: &Translations) -> CommandResult {
-    bot.send_message(chat_id, tr.reply_keyboard_opened.clone())
+pub async fn handle_menu(bot: &Bot, chat_id: ChatId, tr: &Translations, _args: &[&str]) -> CommandResult {
+    let _ = _args;
+    bot.send_message(chat_id, tr.reply_keyboard_opened)
         .reply_markup(super::helpers::main_reply_keyboard(tr))
         .parse_mode(ParseMode::Html)
         .await
@@ -449,7 +456,8 @@ pub async fn handle_menu(bot: &Bot, chat_id: ChatId, tr: &Translations) -> Comma
 }
 
 /// Handles the `/hidekbd` command to hide keyboard.
-pub async fn handle_hidekbd(bot: &Bot, chat_id: ChatId) -> CommandResult {
+pub async fn handle_hidekbd(bot: &Bot, chat_id: ChatId, _args: &[&str]) -> CommandResult {
+    let _ = _args;
     bot.send_message(chat_id, "⌨️ Keyboard hidden")
         .reply_markup(teloxide::types::KeyboardRemove::new())
         .await
@@ -461,7 +469,8 @@ pub async fn handle_hidekbd(bot: &Bot, chat_id: ChatId) -> CommandResult {
 }
 
 /// Handles the `/language` command to show language options.
-pub async fn handle_language(bot: &Bot, chat_id: ChatId, tr: &Translations) -> CommandResult {
+pub async fn handle_language(bot: &Bot, chat_id: ChatId, _tr: &Translations, _args: &[&str]) -> CommandResult {
+    let _ = _args;
     let msg = "🌐 Select language / Seleziona lingua";
     bot.send_message(chat_id, msg)
         .parse_mode(ParseMode::Html)
@@ -474,7 +483,8 @@ pub async fn handle_language(bot: &Bot, chat_id: ChatId, tr: &Translations) -> C
 }
 
 /// Handles the `/whitelist` command info.
-pub async fn handle_whitelist(bot: &Bot, chat_id: ChatId, tr: &Translations) -> CommandResult {
+pub async fn handle_whitelist(bot: &Bot, chat_id: ChatId, _tr: &Translations, _args: &[&str]) -> CommandResult {
+    let _ = _args;
     let msg = "⭐ Whitelist help - Add trusted domains";
     bot.send_message(chat_id, msg)
         .parse_mode(ParseMode::Html)
@@ -494,7 +504,9 @@ pub async fn handle_settings(
     _db: &Db,
     _config: &crate::config::Config,
     _tr: &Translations,
+    _args: &[&str],
 ) -> CommandResult {
+    let _ = _args;
     bot.send_message(chat_id, "⚙️ Settings")
         .parse_mode(ParseMode::Html)
         .await
@@ -511,7 +523,9 @@ pub async fn handle_limits(
     chat_id: ChatId,
     user_config: &UserConfig,
     tr: &Translations,
+    _args: &[&str],
 ) -> CommandResult {
+    let _ = _args;
     let _ = (user_config, tr);  // Silence unused warnings
     let msg = "⚡ API Limits - Rate limiting info";
     bot.send_message(chat_id, msg)
@@ -519,6 +533,188 @@ pub async fn handle_limits(
         .await
         .map_err(|e| {
             error!(?e, "Errore nell'invio limits");
+            AppError::Telegram(e)
+        })?;
+    Ok(())
+}
+
+/// Handles `/whitelist_add <domain>`.
+pub async fn handle_whitelist_add(
+    bot: &Bot,
+    chat_id: ChatId,
+    user_id: i64,
+    db: &Db,
+    args: &[&str],
+) -> CommandResult {
+    if args.len() < 2 {
+        bot.send_message(chat_id, "❌ Uso: /whitelist_add <dominio>")
+            .parse_mode(ParseMode::Html)
+            .await
+            .map_err(|e| {
+                error!(?e, "Errore nell'invio help whitelist_add");
+                AppError::Telegram(e)
+            })?;
+        return Ok(());
+    }
+
+    let domain = args[1].to_string();
+    match db.add_to_whitelist(user_id, &domain).await {
+        Ok(_) => {
+            bot.send_message(chat_id, format!("✅ <b>{}</b> aggiunto alla whitelist", domain))
+                .parse_mode(ParseMode::Html)
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio conferma whitelist_add");
+                    AppError::Telegram(e)
+                })?;
+        }
+        Err(_) => {
+            bot.send_message(chat_id, format!("⚠️ <b>{}</b> è già nella whitelist", domain))
+                .parse_mode(ParseMode::Html)
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio errore whitelist_add");
+                    AppError::Telegram(e)
+                })?;
+        }
+    }
+    Ok(())
+}
+
+/// Handles `/whitelist_remove <domain>`.
+pub async fn handle_whitelist_remove(
+    bot: &Bot,
+    chat_id: ChatId,
+    user_id: i64,
+    db: &Db,
+    args: &[&str],
+) -> CommandResult {
+    if args.len() < 2 {
+        bot.send_message(chat_id, "❌ Uso: /whitelist_remove <dominio>")
+            .parse_mode(ParseMode::Html)
+            .await
+            .map_err(|e| {
+                error!(?e, "Errore nell'invio help whitelist_remove");
+                AppError::Telegram(e)
+            })?;
+        return Ok(());
+    }
+
+    let domain = args[1].to_string();
+    match db.remove_from_whitelist(user_id, &domain).await {
+        Ok(_) => {
+            bot.send_message(chat_id, format!("✅ <b>{}</b> rimosso dalla whitelist", domain))
+                .parse_mode(ParseMode::Html)
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio conferma whitelist_remove");
+                    AppError::Telegram(e)
+                })?;
+        }
+        Err(_) => {
+            bot.send_message(chat_id, "❌ Errore rimuovendo il dominio dalla whitelist")
+                .parse_mode(ParseMode::Html)
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio errore whitelist_remove");
+                    AppError::Telegram(e)
+                })?;
+        }
+    }
+    Ok(())
+}
+
+/// Handles `/setlang <code>`.
+pub async fn handle_set_language(
+    bot: &Bot,
+    chat_id: ChatId,
+    user_id: i64,
+    db: &Db,
+    _tr: &Translations,
+    args: &[&str],
+) -> CommandResult {
+    if args.len() < 2 {
+        bot.send_message(chat_id, "❓ Usa /setlang <codice> (es. /setlang it)")
+            .parse_mode(ParseMode::Html)
+            .await
+            .map_err(|e| {
+                error!(?e, "Errore nell'invio help setlang");
+                AppError::Telegram(e)
+            })?;
+        return Ok(());
+    }
+
+    let lang = args[1];
+    if helpers::SUPPORTED_LANGUAGES.contains(&lang) {
+        let mut config = db.get_user_config(user_id).await.unwrap_or_default();
+        config.language = lang.to_string();
+        db.save_user_config(&config).await.ok();
+
+        let tr_new = i18n::get_translations(lang);
+        let msg = format!(
+            "✅ Lingua cambiata a {}\n\n{}",
+            helpers::language_name(lang),
+            tr_new.s_language_updated
+        );
+        bot.send_message(chat_id, msg)
+            .parse_mode(ParseMode::Html)
+            .await
+            .map_err(|e| {
+                error!(?e, "Errore nell'invio conferma setlang");
+                AppError::Telegram(e)
+            })?;
+    } else {
+        let langs_list = helpers::SUPPORTED_LANGUAGES.join(", ");
+        bot.send_message(chat_id, format!("❌ Lingua non supportata. Lingue disponibili: {}", langs_list))
+            .parse_mode(ParseMode::Html)
+            .await
+            .map_err(|e| {
+                error!(?e, "Errore nell'invio errore setlang");
+                AppError::Telegram(e)
+            })?;
+    }
+    Ok(())
+}
+
+/// Handles `/toplinks` command.
+pub async fn handle_toplinks(
+    bot: &Bot,
+    chat_id: ChatId,
+    db: &Db,
+    _tr: &Translations,
+    _args: &[&str],
+) -> CommandResult {
+    let _ = _args;
+    let top_links = db.get_top_links(10).await.map_err(|e| {
+        error!(?e, "Errore nel recupero top links");
+        AppError::Internal(e.to_string())
+    })?;
+
+    if top_links.is_empty() {
+        bot.send_message(chat_id, "📈 <b>URL Trending</b>\n\nAncora nessun URL processato")
+            .parse_mode(ParseMode::Html)
+            .await
+            .map_err(|e| {
+                error!(?e, "Errore nell'invio toplinks vuoto");
+                AppError::Telegram(e)
+            })?;
+        return Ok(());
+    }
+
+    let mut msg = String::from("📈 <b>Top 10 URL Più Puliti</b>\n\n");
+    for (idx, (url, count)) in top_links.iter().enumerate() {
+        let url_short = if url.len() > 50 {
+            format!("{}...", &url[..47])
+        } else {
+            url.clone()
+        };
+        msg.push_str(&format!("{}. <code>{}</code> ({} volte)\n", idx + 1, url_short, count));
+    }
+    bot.send_message(chat_id, msg)
+        .parse_mode(ParseMode::Html)
+        .await
+        .map_err(|e| {
+            error!(?e, "Errore nell'invio toplinks");
             AppError::Telegram(e)
         })?;
     Ok(())
