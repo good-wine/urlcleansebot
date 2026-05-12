@@ -125,8 +125,8 @@ pub fn validate_language_code(code: &str) -> AppResult<String> {
 ///
 /// Removes potentially dangerous content while preserving safe HTML.
 pub fn sanitize_html_content(content: &str) -> String {
-    // Remove script tags and their content
-    let no_script = Regex::new(r"(?i)<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>").unwrap();
+    // Remove script tags and their content using a simpler approach
+    let no_script = Regex::new(r"(?i)<script[^>]*>.*?</script>").unwrap();
     let no_script = no_script.replace_all(content, "");
 
     // Remove event handlers
@@ -139,17 +139,17 @@ pub fn sanitize_html_content(content: &str) -> String {
 /// Checks if content appears to be a phishing/malicious attempt.
 pub fn detect_suspicious_content(content: &str) -> bool {
     let suspicious_patterns = [
-        "confirm password",
-        "verify account",
-        "update payment",
-        "urgent action required",
-        "click here immediately",
+        "confirm.*password",
+        "verify.*account",
+        "update.*payment",
+        "urgent.*action.*required",
+        "click.*here.*immediately",
     ];
 
     let content_lower = content.to_lowercase();
     suspicious_patterns
         .iter()
-        .any(|pattern| content_lower.contains(pattern))
+        .any(|pattern| Regex::new(&format!("(?i){}", pattern)).unwrap().is_match(&content_lower))
 }
 
 #[cfg(test)]

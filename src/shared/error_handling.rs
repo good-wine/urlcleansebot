@@ -7,17 +7,17 @@
 ///
 /// The ClearURLs Bot uses a hierarchical error handling approach:
 ///
-/// ```
+/// ```text
 /// Application Error (AppError)
-///      ↓
+///     |
 /// Result<T, AppError> alias AppResult<T>
-///      ↓
+///     |
 /// Teloxide RequestError (for Telegram operations)
-///      ↓
+///     |
 /// HTTP Errors (reqwest)
-///      ↓
+///     |
 /// Database Errors (sqlx)
-///      ↓
+///     |
 /// Standard Rust Errors (std::error::Error)
 /// ```
 
@@ -156,7 +156,6 @@ pub mod error_handling_patterns {
     ///
     /// Collect errors from multiple operations
     pub async fn pattern_batch_operations(
-        db: &crate::db::Db,
         urls: &[String],
         user_id: i64,
     ) -> (Vec<String>, Vec<AppError>) {
@@ -308,7 +307,6 @@ pub mod error_recovery_strategies {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shared::error::AppError;
 
     #[tokio::test]
     async fn test_error_propagation() {
@@ -328,10 +326,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_operations() {
-        // This would require a mock database setup
-        // Demonstrating the call signature
+        // Test batch operations without database dependency
         let (_successes, _errors) = error_handling_patterns::pattern_batch_operations(
-            &crate::db::Db::new("sqlite::memory:").await.unwrap(),
             &["https://example.com".to_string()],
             123,
         )
