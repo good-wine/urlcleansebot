@@ -12,7 +12,7 @@ use crate::db::Db;
 use crate::db::models::UserConfig;
 use crate::i18n::Translations;
 use crate::sanitizer::{AiEngine, RuleEngine};
-use crate::shared::error::{AppError, AppResult};
+use crate::shared::error::AppResult;
 
 use super::commands;
 

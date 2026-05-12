@@ -3,8 +3,7 @@
 //! Extracts individual command logic from the main handler to improve readability and testability.
 
 use teloxide::prelude::*;
-use teloxide::types::{ChatId, ParseMode, ReplyParameters};
-use teloxide::utils::html;
+use teloxide::types::{ChatId, ParseMode};
 use tracing::error;
 
 use crate::shared::error::{AppError, AppResult};
@@ -12,12 +11,8 @@ use crate::shared::error::{AppError, AppResult};
 use crate::db::Db;
 use crate::db::models::UserConfig;
 use crate::i18n::{self, Translations};
-use crate::sanitizer::{AiEngine, RuleEngine};
-use crate::config::Config;
 
 use super::helpers;
-use super::security_scan;
-use super::settings;
 
 /// Represents a command execution result.
 pub type CommandResult = AppResult<()>;
@@ -49,7 +44,7 @@ pub async fn handle_stats(
     chat_id: ChatId,
     user_id: i64,
     db: &Db,
-    user_config: &UserConfig,
+    _user_config: &UserConfig,
     tr: &Translations,
     _args: &[&str],
 ) -> CommandResult {
@@ -166,7 +161,7 @@ pub async fn handle_history(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _
 }
 
 /// Handles the `/leaderboard` command.
-pub async fn handle_leaderboard(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Translations, _args: &[&str]) -> CommandResult {
+pub async fn handle_leaderboard(bot: &Bot, chat_id: ChatId, db: &Db, _tr: &Translations, _args: &[&str]) -> CommandResult {
     let _ = _args;
     let result = db.get_top_users(10).await;
     match result {
@@ -215,7 +210,7 @@ pub async fn handle_leaderboard(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Transl
 }
 
 /// Handles the `/trending` command.
-pub async fn handle_trending(bot: &Bot, chat_id: ChatId, db: &Db, tr: &Translations, _args: &[&str]) -> CommandResult {
+pub async fn handle_trending(bot: &Bot, chat_id: ChatId, db: &Db, _tr: &Translations, _args: &[&str]) -> CommandResult {
     let _ = _args;
     let result = db.get_top_links(10).await;
     match result {
@@ -314,7 +309,7 @@ pub async fn handle_domains(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _
 /// Handles the `/help` command.
 pub async fn handle_help(bot: &Bot, chat_id: ChatId, tr: &Translations, _args: &[&str]) -> CommandResult {
     let _ = _args;
-    bot.send_message(chat_id, tr.help_text.clone())
+    bot.send_message(chat_id, tr.help_text)
         .parse_mode(ParseMode::Html)
         .await
         .map_err(|e| {
@@ -325,7 +320,7 @@ pub async fn handle_help(bot: &Bot, chat_id: ChatId, tr: &Translations, _args: &
 }
 
 /// Handles the `/privacy` command.
-pub async fn handle_privacy(bot: &Bot, chat_id: ChatId, tr: &Translations, _args: &[&str]) -> CommandResult {
+pub async fn handle_privacy(bot: &Bot, chat_id: ChatId, _tr: &Translations, _args: &[&str]) -> CommandResult {
     let _ = _args;
     let privacy_text = format!(
         "<b>🔒 Privacy</b>\n\n\
@@ -449,7 +444,7 @@ pub async fn handle_export(bot: &Bot, chat_id: ChatId, user_id: i64, db: &Db, _t
 /// Handles the `/menu` command to show main keyboard.
 pub async fn handle_menu(bot: &Bot, chat_id: ChatId, tr: &Translations, _args: &[&str]) -> CommandResult {
     let _ = _args;
-    bot.send_message(chat_id, tr.reply_keyboard_opened.clone())
+    bot.send_message(chat_id, tr.reply_keyboard_opened)
         .reply_markup(super::helpers::main_reply_keyboard(tr))
         .parse_mode(ParseMode::Html)
         .await
@@ -474,7 +469,7 @@ pub async fn handle_hidekbd(bot: &Bot, chat_id: ChatId, _args: &[&str]) -> Comma
 }
 
 /// Handles the `/language` command to show language options.
-pub async fn handle_language(bot: &Bot, chat_id: ChatId, tr: &Translations, _args: &[&str]) -> CommandResult {
+pub async fn handle_language(bot: &Bot, chat_id: ChatId, _tr: &Translations, _args: &[&str]) -> CommandResult {
     let _ = _args;
     let msg = "🌐 Select language / Seleziona lingua";
     bot.send_message(chat_id, msg)
@@ -488,7 +483,7 @@ pub async fn handle_language(bot: &Bot, chat_id: ChatId, tr: &Translations, _arg
 }
 
 /// Handles the `/whitelist` command info.
-pub async fn handle_whitelist(bot: &Bot, chat_id: ChatId, tr: &Translations, _args: &[&str]) -> CommandResult {
+pub async fn handle_whitelist(bot: &Bot, chat_id: ChatId, _tr: &Translations, _args: &[&str]) -> CommandResult {
     let _ = _args;
     let msg = "⭐ Whitelist help - Add trusted domains";
     bot.send_message(chat_id, msg)
