@@ -7,7 +7,7 @@ default-run = "clear_urls_bot"
 
 [dependencies]
 # Tokio with only needed features (instead of "full")
-tokio = { version = "1.41", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "fs"] }
+tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "fs"] }
 teloxide = { version = "0.17", default-features = false, features = ["macros", "webhooks", "webhooks-axum", "ctrlc_handler", "rustls"] }
 axum = "0.8"
 dptree = "0.5"
