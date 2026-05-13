@@ -500,20 +500,80 @@ pub async fn handle_whitelist(bot: &Bot, chat_id: ChatId, _tr: &Translations, _a
 pub async fn handle_settings(
     bot: &Bot,
     chat_id: ChatId,
-    _user_id: i64,
-    _db: &Db,
+    user_id: i64,
+    db: &Db,
     _config: &crate::config::Config,
     _tr: &Translations,
     _args: &[&str],
 ) -> CommandResult {
     let _ = _args;
-    bot.send_message(chat_id, "⚙️ Settings")
+
+    // Get user configuration
+    let user_config = match db.get_user_config(user_id).await {
+        Ok(config) => config,
+        Err(e) => {
+            error!(?e, user_id, "Failed to get user config for settings");
+            bot.send_message(chat_id, "❌ Errore nel caricamento delle impostazioni")
+                .parse_mode(ParseMode::Html)
+                .await
+                .map_err(|e| {
+                    error!(?e, "Errore nell'invio messaggio errore settings");
+                    AppError::Telegram(e)
+                })?;
+            return Ok(());
+        }
+    };
+
+    // Build settings message
+    let enabled_status = if user_config.is_enabled() {
+        "✅ Abilitato"
+    } else {
+        "❌ Disabilitato"
+    };
+
+    let ai_status = if user_config.is_ai_enabled() {
+        "🤖 Abilitato"
+    } else {
+        "🚫 Disabilitato"
+    };
+
+    let privacy_status = if user_config.privacy_mode != 0 {
+        "🔒 Attivata"
+    } else {
+        "🔓 Disattivata"
+    };
+
+    let mode_text = match user_config.mode.as_str() {
+        "reply" => "Rispondi",
+        "inline" => "Inline",
+        _ => "Sconosciuto",
+    };
+
+    let settings_text = format!(
+        "⚙️ <b>Impostazioni</b>\n\n\
+        <b>Stato:</b> {}\n\
+        <b>AI Engine:</b> {}\n\
+        <b>Modalità:</b> {}\n\
+        <b>Privacy:</b> {}\n\
+        <b>Lingua:</b> {}\n\
+        <b>URL puliti:</b> {}\n\n\
+        <i>Usa /setlang per cambiare lingua</i>",
+        enabled_status,
+        ai_status,
+        mode_text,
+        privacy_status,
+        user_config.language.to_uppercase(),
+        user_config.cleaned_count
+    );
+
+    bot.send_message(chat_id, settings_text)
         .parse_mode(ParseMode::Html)
         .await
         .map_err(|e| {
             error!(?e, "Errore nell'invio settings");
             AppError::Telegram(e)
         })?;
+
     Ok(())
 }
 
