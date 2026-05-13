@@ -3,69 +3,25 @@
 //! This module documents and demonstrates improved error handling patterns
 //! for the ClearURLs Bot project.
 
-/// Error Handling Strategy Overview
-///
-/// The ClearURLs Bot uses a hierarchical error handling approach:
-///
-/// ```text
-/// Application Error (AppError)
-///     |
-/// Result<T, AppError> alias AppResult<T>
-///     |
-/// Teloxide RequestError (for Telegram operations)
-///     |
-/// HTTP Errors (reqwest)
-///     |
-/// Database Errors (sqlx)
-///     |
-/// Standard Rust Errors (std::error::Error)
-/// ```
-
-#[doc = "
-# Anti-Patterns to Avoid
-
-## ❌ NEVER DO THIS:
-
-```rust,ignore
-// Never use .unwrap() in production code
-let value = some_result.unwrap(); // ← WRONG!
-
-// Never use .expect() without context
-let value = some_result.expect(\"failed\"); // ← WRONG!
-
-// Never silently ignore errors
-let _ = db.save_user_config(&config).await; // ← WRONG! (except in specific cases)
-
-// Never create new errors without context
-return Err(AppError::Internal(\"error\".to_string())); // ← WRONG! No context
-```
-
-## ✅ CORRECT PATTERNS:
-
-```rust,ignore
-// Use ? operator for error propagation
-let value = some_result?; // ← RIGHT!
-
-// Use map_err for error transformation
-let value = some_result.map_err(|e| {
-    AppError::Internal(format!(\"Failed to process: {}\", e))
-})?; // ← RIGHT!
-
-// Use ? with context for important operations
-let config = db.get_user_config(user_id)
-    .await
-    .map_err(|e| {
-        AppError::Database(format!(\"Failed to load config for user {}: {}\", user_id, e))
-    })?;
-
-// Log important errors instead of silently ignoring
-if let Err(e) = db.save_user_config(&config).await {
-    tracing::warn!(error = %e, user_id = %user_id, \"Failed to save user config\");
-    // Optionally notify user
-}
-```
-"]
-
+// Error Handling Strategy Overview
+//
+// The ClearURLs Bot uses a hierarchical error handling approach:
+//
+// ```text
+// Application Error (AppError)
+//     |
+// Result<T, AppError> alias AppResult<T>
+//     |
+// Teloxide RequestError (for Telegram operations)
+//     |
+// HTTP Errors (reqwest)
+//     |
+// Database Errors (sqlx)
+//     |
+// Standard Rust Errors (std::error::Error)
+// ```
+// # Anti-Patterns to Avoid
+//
 pub mod error_handling_patterns {
     use crate::shared::error::{AppError, AppResult};
     use std::collections::HashMap;
@@ -86,27 +42,23 @@ pub mod error_handling_patterns {
         db: &crate::db::Db,
         user_id: i64,
     ) -> AppResult<HashMap<String, String>> {
-        let config = db.get_user_config(user_id)
-            .await
-            .map_err(|e| {
-                AppError::Internal(format!(
-                    "Failed to load user config for user {}: {}",
-                    user_id, e
-                ))
-            })?;
+        let config = db.get_user_config(user_id).await.map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to load user config for user {}: {}",
+                user_id, e
+            ))
+        })?;
 
-        Ok(HashMap::from_iter(vec![
-            ("language".to_string(), config.language),
-        ]))
+        Ok(HashMap::from_iter(vec![(
+            "language".to_string(),
+            config.language,
+        )]))
     }
 
     /// Pattern 3: Graceful Degradation with unwrap_or
     ///
     /// Use unwrap_or for non-critical operations
-    pub fn pattern_graceful_degradation(
-        text: &str,
-        fallback: &str,
-    ) -> String {
+    pub fn pattern_graceful_degradation(text: &str, fallback: &str) -> String {
         crate::shared::validation::sanitize_html_content(text)
             .split('#')
             .next()
@@ -135,9 +87,7 @@ pub mod error_handling_patterns {
     /// Pattern 5: Conditional Error Handling
     ///
     /// Different handling based on error type or condition
-    pub async fn pattern_conditional_handling(
-        text: &str,
-    ) -> AppResult<String> {
+    pub async fn pattern_conditional_handling(text: &str) -> AppResult<String> {
         match crate::shared::validation::validate_url(text) {
             Ok(url) => Ok(url),
             Err(AppError::Validation(msg)) => {
@@ -209,10 +159,7 @@ pub mod error_recovery_strategies {
     /// Strategy 1: Retry with Exponential Backoff
     ///
     /// For transient errors, retry with increasing delays
-    pub async fn strategy_retry_with_backoff<F, Fut, T>(
-        mut f: F,
-        max_retries: u32,
-    ) -> AppResult<T>
+    pub async fn strategy_retry_with_backoff<F, Fut, T>(mut f: F, max_retries: u32) -> AppResult<T>
     where
         F: FnMut() -> Fut,
         Fut: std::future::Future<Output = AppResult<T>>,
@@ -266,22 +213,29 @@ pub mod error_recovery_strategies {
         }
 
         pub fn record_success(&self) {
-            let successes =
-                self.successes.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            let successes = self
+                .successes
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                + 1;
             if successes >= self.success_threshold {
                 // Circuit is now closed again
                 self.failures.store(0, std::sync::atomic::Ordering::SeqCst);
                 self.successes.store(0, std::sync::atomic::Ordering::SeqCst);
-                self.is_open.store(false, std::sync::atomic::Ordering::SeqCst);
+                self.is_open
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
                 tracing::info!("Circuit breaker closed - service recovered");
             }
         }
 
         pub fn record_failure(&self) {
-            let failures = self.failures.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            let failures = self
+                .failures
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                + 1;
             if failures >= self.failure_threshold {
                 // Circuit is now open
-                self.is_open.store(true, std::sync::atomic::Ordering::SeqCst);
+                self.is_open
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 tracing::error!("Circuit breaker opened - service is down");
             }
         }
@@ -310,17 +264,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_propagation() {
-        let result =
-            error_handling_patterns::pattern_error_propagation("not a url").await;
+        let result = error_handling_patterns::pattern_error_propagation("not a url").await;
         assert!(result.is_err());
     }
 
     #[test]
     fn test_graceful_degradation() {
-        let result = error_handling_patterns::pattern_graceful_degradation(
-            "#anchor",
-            "fallback",
-        );
+        let result = error_handling_patterns::pattern_graceful_degradation("#anchor", "fallback");
         assert_eq!(result, "".to_string());
     }
 

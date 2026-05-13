@@ -121,7 +121,7 @@ impl Db {
 
         // Create indexes for performance optimization
         // These indexes speed up common queries significantly
-        
+
         // Index for leaderboard queries (get_top_users)
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_user_configs_cleaned_count ON user_configs(cleaned_count DESC)")
             .execute(&self.pool)
@@ -148,9 +148,11 @@ impl Db {
             .await?;
 
         // Index for feature_flags lookups
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_feature_flags_user_id ON feature_flags(user_id)")
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_feature_flags_user_id ON feature_flags(user_id)",
+        )
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }

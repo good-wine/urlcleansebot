@@ -18,6 +18,7 @@ use serde_json;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio;
 use tracing;
+use urlencoding;
 
 use crate::http_utils::retry_http_request;
 
@@ -153,10 +154,12 @@ pub async fn check_url_virustotal(url: &str) -> Option<String> {
 
         let submit_resp = match retry_http_request(
             || {
+                let form_body = format!("url={}", urlencoding::encode(url));
                 client
                     .post("https://www.virustotal.com/api/v3/urls")
                     .header("x-apikey", &api_key)
-                    .form(&[("url", url)])
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .body(form_body)
             },
             "VirusTotal submit",
         )
@@ -405,10 +408,9 @@ pub async fn search_existing_urlscan(url: &str, api_key: &str) -> Option<String>
 
     let search_resp = match retry_http_request(
         || {
-            client
-                .get("https://urlscan.io/api/v1/search/")
-                .header("API-Key", api_key)
-                .query(&[("q", search_query.as_str())])
+            let encoded_query = urlencoding::encode(search_query.as_str());
+            let url = format!("https://urlscan.io/api/v1/search/?q={}", encoded_query);
+            client.get(&url).header("API-Key", api_key)
         },
         "URLScan search",
     )
