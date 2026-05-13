@@ -5,8 +5,8 @@
 use crate::db::models::CustomRule;
 use crate::sanitizer::RuleEngine;
 use crate::shared::security::is_safe_url_scheme;
-use teloxide::utils::html;
 use std::collections::HashSet;
+use teloxide::utils::html;
 
 /// Represents a cleaned URL result with metadata.
 #[derive(Debug, Clone)]
@@ -59,7 +59,8 @@ pub async fn process_single_url(
     }
 
     // Apply sanitization
-    let (cleaned_url, provider) = match rules.sanitize(&expanded_url, custom_rules, ignored_domains) {
+    let (cleaned_url, provider) = match rules.sanitize(&expanded_url, custom_rules, ignored_domains)
+    {
         Some((url, prov)) => (url, prov),
         None => return None,
     };

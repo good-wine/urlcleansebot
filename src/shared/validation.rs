@@ -2,9 +2,9 @@
 //!
 //! Provides comprehensive validation for URLs, command parameters, and callback data.
 
+use crate::shared::error::{AppError, AppResult};
 use regex::Regex;
 use url::Url;
-use crate::shared::error::{AppError, AppResult};
 
 /// Maximum allowed URL length (typically 2048 bytes for URLs)
 const MAX_URL_LENGTH: usize = 2048;
@@ -66,8 +66,9 @@ pub fn validate_domain(domain: &str) -> AppResult<String> {
     }
 
     // Basic domain regex: allows alphanumeric, hyphens, dots
-    let domain_regex = Regex::new(r"^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$")
-        .expect("Failed to compile domain regex");
+    let domain_regex =
+        Regex::new(r"^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$")
+            .expect("Failed to compile domain regex");
 
     if !domain_regex.is_match(domain) {
         return Err(AppError::Validation(format!(
@@ -90,7 +91,9 @@ pub fn validate_domain(domain: &str) -> AppResult<String> {
 /// - `Err(AppError)` if validation fails
 pub fn validate_parameter(param: &str, allowed_pattern: Option<&str>) -> AppResult<String> {
     if param.is_empty() {
-        return Err(AppError::Validation("Parameter cannot be empty".to_string()));
+        return Err(AppError::Validation(
+            "Parameter cannot be empty".to_string(),
+        ));
     }
 
     if param.len() > MAX_PARAM_LENGTH {
@@ -103,11 +106,11 @@ pub fn validate_parameter(param: &str, allowed_pattern: Option<&str>) -> AppResu
     if let Some(pattern) = allowed_pattern {
         let regex = Regex::new(pattern)
             .map_err(|e| AppError::Validation(format!("Failed to compile pattern: {}", e)))?;
-        
+
         if !regex.is_match(param) {
-            return Err(AppError::Validation(format!(
-                "Parameter does not match required pattern"
-            )));
+            return Err(AppError::Validation(
+                "Parameter does not match required pattern".to_string(),
+            ));
         }
     }
 
@@ -117,7 +120,9 @@ pub fn validate_parameter(param: &str, allowed_pattern: Option<&str>) -> AppResu
 /// Validates a language code (ISO 639-1 format).
 pub fn validate_language_code(code: &str) -> AppResult<String> {
     validate_parameter(code, Some(r"^[a-z]{2}$")).map_err(|_| {
-        AppError::Validation("Language code must be 2 lowercase letters (e.g., 'it', 'en')".to_string())
+        AppError::Validation(
+            "Language code must be 2 lowercase letters (e.g., 'it', 'en')".to_string(),
+        )
     })
 }
 
@@ -147,9 +152,11 @@ pub fn detect_suspicious_content(content: &str) -> bool {
     ];
 
     let content_lower = content.to_lowercase();
-    suspicious_patterns
-        .iter()
-        .any(|pattern| Regex::new(&format!("(?i){}", pattern)).unwrap().is_match(&content_lower))
+    suspicious_patterns.iter().any(|pattern| {
+        Regex::new(&format!("(?i){}", pattern))
+            .unwrap()
+            .is_match(&content_lower)
+    })
 }
 
 #[cfg(test)]

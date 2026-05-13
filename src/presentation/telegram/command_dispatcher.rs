@@ -8,8 +8,8 @@ use teloxide::types::ChatId;
 use tracing::{debug, warn};
 
 use crate::config::Config;
-use crate::db::Db;
 use crate::db::models::UserConfig;
+use crate::db::Db;
 use crate::i18n::Translations;
 use crate::sanitizer::{AiEngine, RuleEngine};
 use crate::shared::error::AppResult;
@@ -92,12 +92,8 @@ impl Command {
 
     pub fn parse_with_args(text: &str) -> Option<(Self, Vec<&str>)> {
         let parts: Vec<&str> = text.split_whitespace().collect();
-        let cmd_text = parts.get(0).copied().unwrap_or("");
-        if let Some(cmd) = Command::parse(cmd_text) {
-            Some((cmd, parts))
-        } else {
-            None
-        }
+        let cmd_text = parts.first().copied().unwrap_or("");
+        Command::parse(cmd_text).map(|cmd| (cmd, parts))
     }
 
     /// Dispatch command execution to appropriate handler.
@@ -106,13 +102,25 @@ impl Command {
     /// `Ok(())` if successful, `AppError` otherwise
     pub async fn execute(&self, ctx: &CommandContext, args: &[&str]) -> AppResult<()> {
         match self {
-            Command::Start => commands::handle_start(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.tr, args).await,
+            Command::Start => {
+                commands::handle_start(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.tr, args).await
+            }
             Command::Help => commands::handle_help(&ctx.bot, ctx.chat_id, &ctx.tr, args).await,
             Command::Stats => {
-                commands::handle_stats(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, &ctx.user_config, &ctx.tr, args).await
+                commands::handle_stats(
+                    &ctx.bot,
+                    ctx.chat_id,
+                    ctx.user_id,
+                    &ctx.db,
+                    &ctx.user_config,
+                    &ctx.tr,
+                    args,
+                )
+                .await
             }
             Command::History => {
-                commands::handle_history(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, &ctx.tr, args).await
+                commands::handle_history(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, &ctx.tr, args)
+                    .await
             }
             Command::Leaderboard => {
                 commands::handle_leaderboard(&ctx.bot, ctx.chat_id, &ctx.db, &ctx.tr, args).await
@@ -121,11 +129,15 @@ impl Command {
                 commands::handle_trending(&ctx.bot, ctx.chat_id, &ctx.db, &ctx.tr, args).await
             }
             Command::Domains => {
-                commands::handle_domains(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, &ctx.tr, args).await
+                commands::handle_domains(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, &ctx.tr, args)
+                    .await
             }
-            Command::Privacy => commands::handle_privacy(&ctx.bot, ctx.chat_id, &ctx.tr, args).await,
+            Command::Privacy => {
+                commands::handle_privacy(&ctx.bot, ctx.chat_id, &ctx.tr, args).await
+            }
             Command::Export => {
-                commands::handle_export(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, &ctx.tr, args).await
+                commands::handle_export(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, &ctx.tr, args)
+                    .await
             }
             Command::Settings => {
                 commands::handle_settings(
@@ -141,22 +153,42 @@ impl Command {
             }
             Command::Menu => commands::handle_menu(&ctx.bot, ctx.chat_id, &ctx.tr, args).await,
             Command::HideKbd => commands::handle_hidekbd(&ctx.bot, ctx.chat_id, args).await,
-            Command::Language => commands::handle_language(&ctx.bot, ctx.chat_id, &ctx.tr, args).await,
-            Command::SetLanguage => {
-                commands::handle_set_language(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, &ctx.tr, args).await
+            Command::Language => {
+                commands::handle_language(&ctx.bot, ctx.chat_id, &ctx.tr, args).await
             }
-            Command::Whitelist => commands::handle_whitelist(&ctx.bot, ctx.chat_id, &ctx.tr, args).await,
+            Command::SetLanguage => {
+                commands::handle_set_language(
+                    &ctx.bot,
+                    ctx.chat_id,
+                    ctx.user_id,
+                    &ctx.db,
+                    &ctx.tr,
+                    args,
+                )
+                .await
+            }
+            Command::Whitelist => {
+                commands::handle_whitelist(&ctx.bot, ctx.chat_id, &ctx.tr, args).await
+            }
             Command::WhitelistAdd => {
-                commands::handle_whitelist_add(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, args).await
+                commands::handle_whitelist_add(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, args)
+                    .await
             }
             Command::WhitelistRemove => {
-                commands::handle_whitelist_remove(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, args).await
+                commands::handle_whitelist_remove(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, args)
+                    .await
             }
             Command::WhitelistShow => {
-                commands::handle_whitelist_show(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, args).await
+                commands::handle_whitelist_show(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, args)
+                    .await
             }
-            Command::Limits => commands::handle_limits(&ctx.bot, ctx.chat_id, &ctx.user_config, &ctx.tr, args).await,
-            Command::TopLinks => commands::handle_toplinks(&ctx.bot, ctx.chat_id, &ctx.db, &ctx.tr, args).await,
+            Command::Limits => {
+                commands::handle_limits(&ctx.bot, ctx.chat_id, &ctx.user_config, &ctx.tr, args)
+                    .await
+            }
+            Command::TopLinks => {
+                commands::handle_toplinks(&ctx.bot, ctx.chat_id, &ctx.db, &ctx.tr, args).await
+            }
         }
     }
 
@@ -189,10 +221,7 @@ impl Command {
 
 /// Main dispatcher for command routing.
 /// Handles command parsing, throttling, and execution.
-pub async fn dispatch_command(
-    text: &str,
-    ctx: &CommandContext,
-) -> AppResult<bool> {
+pub async fn dispatch_command(text: &str, ctx: &CommandContext) -> AppResult<bool> {
     // Parse command and preserve args
     if let Some((cmd, args)) = Command::parse_with_args(text) {
         debug!(command = %cmd.name(), user_id = ctx.user_id, "Esecuzione comando");
