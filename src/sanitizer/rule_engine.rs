@@ -597,7 +597,7 @@ mod tests {
             let mut w = match engine.providers.write() {
                 Ok(w) => w,
                 Err(poisoned) => {
-                    log::error!("RuleEngine providers RwLock poisoned, recovering");
+                    tracing::error!("RuleEngine providers RwLock poisoned, recovering");
                     poisoned.into_inner()
                 }
             };

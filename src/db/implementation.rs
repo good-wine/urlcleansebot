@@ -108,17 +108,6 @@ impl Db {
         .execute(&self.pool)
         .await?;
 
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS rate_limits (
-                user_id INTEGER PRIMARY KEY,
-                action_count INTEGER NOT NULL DEFAULT 0,
-                window_start INTEGER NOT NULL,
-                last_action INTEGER NOT NULL
-            )",
-        )
-        .execute(&self.pool)
-        .await?;
-
         // Create indexes for performance optimization
         // These indexes speed up common queries significantly
 
@@ -502,91 +491,5 @@ impl Db {
             .into_iter()
             .map(|(name, enabled)| (name, enabled != 0))
             .collect())
-    }
-
-    // Rate limiting implementation
-    /// Check if user has exceeded rate limit (configurable actions per hour)
-    pub async fn check_rate_limit(
-        &self,
-        user_id: i64,
-        max_actions: i64,
-        window_seconds: i64,
-    ) -> Result<bool> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs() as i64;
-
-        // Get current rate limit status
-        let current = sqlx::query_as::<_, (i64, i64, i64)>(
-            "SELECT action_count, window_start, last_action FROM rate_limits WHERE user_id = ?",
-        )
-        .bind(user_id)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        match current {
-            Some((count, window_start, _last_action)) => {
-                // Check if we're still in the same window
-                if now - window_start < window_seconds {
-                    if count >= max_actions {
-                        // Rate limit exceeded
-                        return Ok(false);
-                    }
-                    // Increment counter
-                    sqlx::query(
-                        "UPDATE rate_limits SET action_count = action_count + 1, last_action = ? WHERE user_id = ?"
-                    )
-                    .bind(now)
-                    .bind(user_id)
-                    .execute(&self.pool)
-                    .await?;
-                } else {
-                    // New window, reset counter
-                    sqlx::query(
-                        "UPDATE rate_limits SET action_count = 1, window_start = ?, last_action = ? WHERE user_id = ?"
-                    )
-                    .bind(now)
-                    .bind(now)
-                    .bind(user_id)
-                    .execute(&self.pool)
-                    .await?;
-                }
-            }
-            None => {
-                // First action, create entry
-                sqlx::query(
-                    "INSERT INTO rate_limits (user_id, action_count, window_start, last_action) VALUES (?, 1, ?, ?)"
-                )
-                .bind(user_id)
-                .bind(now)
-                .bind(now)
-                .execute(&self.pool)
-                .await?;
-            }
-        }
-
-        Ok(true)
-    }
-
-    /// Get rate limit status for a user
-    pub async fn get_rate_limit_status(&self, user_id: i64) -> Result<Option<(i64, i64)>> {
-        let result = sqlx::query_as::<_, (i64, i64)>(
-            "SELECT action_count, window_start FROM rate_limits WHERE user_id = ?",
-        )
-        .bind(user_id)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        Ok(result)
-    }
-
-    /// Reset rate limit for a user (admin function)
-    pub async fn reset_rate_limit(&self, user_id: i64) -> Result<()> {
-        sqlx::query("DELETE FROM rate_limits WHERE user_id = ?")
-            .bind(user_id)
-            .execute(&self.pool)
-            .await?;
-
-        Ok(())
     }
 }

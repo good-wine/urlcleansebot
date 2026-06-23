@@ -11,7 +11,7 @@ use crate::shared::security::{
 };
 use moka::future::Cache;
 use moka::sync::Cache as SyncCache;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use teloxide::prelude::*;
 use teloxide::types::{
     CallbackQuery, ChatAction, ChatId, ChosenInlineResult, InlineQuery, Message, ParseMode,
@@ -25,13 +25,13 @@ use super::helpers;
 use super::security_scan;
 use super::settings;
 
-static URL_CACHE: Lazy<Cache<String, String>> = Lazy::new(|| {
+static URL_CACHE: LazyLock<Cache<String, String>> = LazyLock::new(|| {
     Cache::builder()
         .max_capacity(URL_CACHE_MAX_CAPACITY)
         .build()
 });
 
-static CALLBACK_CACHE: Lazy<SyncCache<String, ()>> = Lazy::new(|| {
+static CALLBACK_CACHE: LazyLock<SyncCache<String, ()>> = LazyLock::new(|| {
     SyncCache::builder()
         .max_capacity(50_000)
         .time_to_live(std::time::Duration::from_secs(CALLBACK_DEDUP_TTL_SECS))

@@ -7,8 +7,8 @@
 
 use moka::future::Cache;
 use moka::sync::Cache as SyncCache;
-use once_cell::sync::Lazy;
 use regex::Regex;
+use std::sync::LazyLock;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,7 +27,7 @@ pub const RATE_LIMIT_WINDOW: u64 = 60;
 
 // ── Async rate limiter (for query handlers) ───────────────────────────────
 
-static RATE_LIMITER_CACHE: Lazy<Cache<i64, Arc<u32>>> = Lazy::new(|| {
+static RATE_LIMITER_CACHE: LazyLock<Cache<i64, Arc<u32>>> = LazyLock::new(|| {
     Cache::builder()
         .max_capacity(100_000)
         .time_to_live(std::time::Duration::from_secs(RATE_LIMIT_WINDOW))
@@ -77,7 +77,7 @@ impl RateLimiter {
     }
 }
 
-pub static RATE_LIMITER: Lazy<RateLimiter> = Lazy::new(|| RateLimiter::new(Duration::from_secs(1)));
+pub static RATE_LIMITER: LazyLock<RateLimiter> = LazyLock::new(|| RateLimiter::new(Duration::from_secs(1)));
 
 // ── Input sanitization ─────────────────────────────────────────────────────
 
@@ -121,13 +121,13 @@ pub fn sanitize_telegram_text(text: &str) -> String {
 }
 
 // ── Validation ─────────────────────────────────────────────────────────────
+static URL_REGEX: LazyLock<Regex> =
 
-static URL_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^https?://[^\s/$.?#]+\.[^\s]*$").unwrap());
+    LazyLock::new(|| Regex::new(r"^https?://[^\s/$.?#]+\.[^\s]*$").unwrap());
 
-static MALICIOUS_PATTERNS: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)(javascript:|data:|vbscript:|file:|ftp:|mailto:)").unwrap());
+static MALICIOUS_PATTERNS: LazyLock<Regex> =
 
+    LazyLock::new(|| Regex::new(r"(?i)(javascript:|data:|vbscript:|file:|ftp:|mailto:)").unwrap());
 pub fn validate_url(url: &str) -> Result<String, SecurityError> {
     if url.len() > MAX_URL_LENGTH {
         return Err(SecurityError::UrlTooLong);
@@ -168,7 +168,7 @@ pub fn is_admin(user_id: i64, admin_id: i64) -> bool {
     user_id == admin_id
 }
 
-static USER_ID_HASH_SALT: Lazy<String> = Lazy::new(|| {
+static USER_ID_HASH_SALT: LazyLock<String> = LazyLock::new(|| {
     std::env::var("USER_ID_HASH_SALT").unwrap_or_else(|_| "clearurlsbot-default-salt".to_string())
 });
 
@@ -181,7 +181,7 @@ pub fn hash_user_id(user_id: i64) -> String {
     result.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-static DOMAIN_REGEX: Lazy<Regex> = Lazy::new(|| {
+static DOMAIN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$").unwrap()
 });
 

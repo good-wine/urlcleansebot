@@ -1,7 +1,7 @@
 use crate::i18n;
 use crate::redirects::RedirectService;
-use once_cell::sync::Lazy;
 use regex::Regex;
+use std::sync::LazyLock;
 use teloxide::prelude::*;
 use teloxide::types::{
     ChatId, InlineKeyboardButton, InlineKeyboardMarkup, InlineQuery, InlineQueryResult,
@@ -13,7 +13,7 @@ use whatlang::{detect, Lang};
 
 use std::collections::HashSet;
 
-static URL_FALLBACK_REGEX: Lazy<Regex> = Lazy::new(|| {
+static URL_FALLBACK_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:https?://|www\.)[a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}(?:/[^\s]*)?").unwrap()
 });
 

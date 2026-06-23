@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::time::Duration;
-use tracing::debug;
+use tracing::{debug, warn};
 
 const AI_TIMEOUT_SECS: u64 = 30;
 
@@ -26,7 +26,7 @@ impl AiEngine {
                 .timeout(Duration::from_secs(AI_TIMEOUT_SECS))
                 .build()
                 .unwrap_or_else(|e| {
-                    log::warn!(
+                    warn!(
                         "Failed to build AI client with timeout: {}, using default client",
                         e
                     );

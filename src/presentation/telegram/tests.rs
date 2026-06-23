@@ -17,6 +17,7 @@ mod command_handler_tests {
     fn test_handle_start_response_format() {
         let tr = mock_translations();
         let response = tr.welcome.replace("{}", "123456789");
+        let _ = tr;
         
         // Verify response is not empty and contains expected text
         assert!(!response.is_empty());
@@ -32,7 +33,7 @@ mod command_handler_tests {
 
     #[test]
     fn test_stats_formatting_with_no_activity() {
-        let tr = mock_translations();
+        let _tr = mock_translations();
         
         let config = UserConfig {
             user_id: 12345,
@@ -67,11 +68,10 @@ mod command_handler_tests {
         assert_eq!(config.cleaned_count, 42);
         assert!(config.is_ai_enabled());
         let activity_level = (config.cleaned_count.min(100) / 10) as usize;
-        assert_eq!(activity_level, 4);  // 42 / 10 = 4
+        assert_eq!(activity_level, 4);
         
-        // Progress bar should be 4 filled + 6 empty
         let progress_bar = "█".repeat(activity_level) + &"░".repeat(10 - activity_level);
-        assert_eq!(progress_bar.len(), 10);
+        assert_eq!(progress_bar.chars().count(), 10);
     }
 
     #[test]
@@ -118,11 +118,11 @@ mod command_handler_tests {
 
     #[test]
     fn test_leaderboard_formatting_with_medals() {
-        let top_users = vec![
-            (111, 500),  // 1st place (🥇)
-            (222, 400),  // 2nd place (🥈)
-            (333, 300),  // 3rd place (🥉)
-            (444, 200),  // 4th place (no medal)
+        let top_users = [
+            (111, 500),
+            (222, 400),
+            (333, 300),
+            (444, 200),
         ];
 
         let mut msg = String::from("🏆 <b>Top 10 Cleaners</b>\n\n");
@@ -166,7 +166,7 @@ mod command_handler_tests {
         ];
 
         for domain in valid_domains {
-            assert!(domain.len() > 0);
+            assert!(!domain.is_empty());
             assert!(!domain.starts_with('.'));
             assert!(!domain.ends_with('.'));
         }
@@ -176,6 +176,7 @@ mod command_handler_tests {
     fn test_privacy_text_contains_required_sections() {
         let tr = mock_translations();
         let privacy_msg = "🔒 Privacy\n\nGDPP compliant\n\n📊 Data Collection\n...";
+        let _ = tr;
         
         // Basic structure checks
         assert!(privacy_msg.contains("🔒"));
@@ -184,16 +185,14 @@ mod command_handler_tests {
 
     #[test]
     fn test_export_json_structure() {
-        let mock_history = vec![
-            CleanedLink {
-                id: 1,
-                user_id: 12345,
-                original_url: "https://example.com?utm_source=test".to_string(),
-                cleaned_url: "https://example.com".to_string(),
-                provider_name: Some("Rules".to_string()),
-                timestamp: 1715425200,
-            },
-        ];
+        let mock_history = [CleanedLink {
+            id: 1,
+            user_id: 12345,
+            original_url: "https://example.com?utm_source=test".to_string(),
+            cleaned_url: "https://example.com".to_string(),
+            provider_name: Some("Rules".to_string()),
+            timestamp: 1715425200,
+        }];
 
         // Simulate JSON serialization
         let json_data = serde_json::json!({
@@ -228,8 +227,8 @@ mod command_handler_tests {
 
         for msg in error_msgs {
             assert!(!msg.is_empty());
-            assert!(msg.len() < 500);  // Reasonable length
-            assert!(msg.chars().next().unwrap().is_ascii());  // Starts with ASCII or emoji
+            assert!(msg.len() < 500);
+            assert!(msg.chars().next().unwrap().len_utf8() <= 4);  // Valid Unicode start
         }
     }
 

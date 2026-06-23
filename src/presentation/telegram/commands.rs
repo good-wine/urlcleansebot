@@ -904,8 +904,6 @@ pub async fn handle_toplinks(
     Ok(())
 }
 
-// TODO: Unit tests for command handlers would go here
-// Note: As of May 2026, the command module is still evolving
-// Missing implementations: handle_settings, handle_menu, handle_hidekbd,
-// handle_language, handle_whitelist, handle_limits
-// See RECOMMENDATIONS_2026_05.md for the full integration plan
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;

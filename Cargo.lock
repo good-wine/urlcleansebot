@@ -305,9 +305,7 @@ dependencies = [
  "dotenvy",
  "dptree",
  "futures",
- "log",
  "moka",
- "once_cell",
  "percent-encoding",
  "regex",
  "reqwest 0.13.3",
@@ -324,6 +322,8 @@ dependencies = [
  "tracing-error",
  "tracing-subscriber",
  "url",
+ "url-normalize",
+ "url-sanitize-core",
  "urlencoding",
  "whatlang",
 ]
@@ -1973,6 +1973,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex-lite"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973"
+
+[[package]]
 name = "regex-syntax"
 version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3246,6 +3252,29 @@ dependencies = [
  "percent-encoding",
  "serde",
  "serde_derive",
+]
+
+[[package]]
+name = "url-normalize"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1db355d41377ce831ea473e279ee3214fd6cce3e4e512567e9f6834ce85d5a3"
+dependencies = [
+ "idna",
+]
+
+[[package]]
+name = "url-sanitize-core"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e7ab834a9da596856adc923a62ad88291259acc0c3911f7c08b6954ef8122d7"
+dependencies = [
+ "base64",
+ "percent-encoding",
+ "regex-lite",
+ "serde",
+ "serde_json",
+ "url",
 ]
 
 [[package]]

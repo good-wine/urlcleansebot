@@ -1,7 +1,7 @@
 [package]
 name = "clear_urls_bot"
 version = "0.2.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.88"
 default-run = "clear_urls_bot"
 
@@ -28,14 +28,17 @@ async-trait = "0.1"
 whatlang = "0.18.0"
 moka = { version = "0.12.12", features = ["future", "sync"] }
 base64 = "0.22"
-log = "0.4"
-once_cell = "1.19"
 percent-encoding = "2.3.2"
 tokio-retry = "0.3"
 thiserror = "2.0"
 chrono = { version = "0.4", features = ["serde"] }
 urlencoding = "2.1.3"
 sha2 = "0.11"
+
+# URL normalization (canonicalization, sorting params, removing www, etc.)
+url-normalize = "0.1"
+# Multi-source tracking parameter removal (ClearURLs + AdGuard + Brave + Firefox)
+url-sanitize-core = "2.0"
 
 [profile.release]
 lto = "fat"
