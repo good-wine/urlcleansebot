@@ -1,0 +1,17 @@
+# Auto-assign reviewers for PRs
+
+# Default owners for everything
+* @good-wine
+
+# CI/CD changes
+.github/ @good-wine
+
+# Documentation changes
+*.md @good-wine
+docs/ @good-wine
+
+# Rust source
+src/ @good-wine
+
+# Tests
+tests/ @good-wine

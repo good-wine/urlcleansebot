@@ -1,9 +1,20 @@
 [package]
-name = "clear_urls_bot"
+name = "url_cleanse_bot"
 version = "0.2.0"
 edition = "2024"
 rust-version = "1.88"
-default-run = "clear_urls_bot"
+default-run = "url_cleanse_bot"
+description = "Telegram bot that removes tracking parameters from URLs using multi-source rule engines"
+license = "MIT"
+repository = "https://github.com/good-wine/urlcleansebot"
+keywords = ["telegram", "bot", "privacy", "tracking", "url-cleaner"]
+categories = ["command-line-utilities", "web-programming"]
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
 
 [dependencies]
 # Tokio with only needed features (instead of "full")
@@ -19,13 +30,10 @@ regex = "1.12"
 url = "2.5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "time", "registry"] }
-tracing-appender = "0.2"
 tracing-error = "0.2"
 dotenvy = "0.15"
-anyhow = "1.0"
 futures = "0.3"
-async-trait = "0.1"
-whatlang = "0.18.0"
+
 moka = { version = "0.12.12", features = ["future", "sync"] }
 base64 = "0.22"
 percent-encoding = "2.3.2"
@@ -40,14 +48,17 @@ url-normalize = "0.1"
 # Multi-source tracking parameter removal (ClearURLs + AdGuard + Brave + Firefox)
 url-sanitize-core = "2.0"
 
+[dev-dependencies]
+proptest = "1.6"
+
 [profile.release]
 lto = "fat"
 strip = "symbols"
 codegen-units = 1
 incremental = false
 panic = "abort"
-opt-level = "z"
-overflow-checks = false
+opt-level = "s"
+overflow-checks = true
 debug = false
 
 [profile.release-with-debug]

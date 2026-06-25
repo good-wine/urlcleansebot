@@ -8,11 +8,12 @@ use teloxide::types::ChatId;
 use tracing::{debug, warn};
 
 use crate::config::Config;
-use crate::db::models::UserConfig;
 use crate::db::Db;
+use crate::db::models::UserConfig;
 use crate::i18n::Translations;
 use crate::sanitizer::{AiEngine, RuleEngine};
 use crate::shared::error::AppResult;
+use crate::shared::security::check_rate_limit;
 
 use super::commands;
 
@@ -28,6 +29,7 @@ pub struct CommandContext {
     pub config: Config,
     pub tr: Translations,
     pub user_config: UserConfig,
+    pub lang_code: String,
 }
 
 /// Define all available commands as an enum for type-safe routing.
@@ -45,14 +47,11 @@ pub enum Command {
     Settings,
     Menu,
     HideKbd,
-    Language,
-    SetLanguage,
     Whitelist,
     WhitelistAdd,
     WhitelistRemove,
     WhitelistShow,
     Limits,
-    TopLinks,
 }
 
 impl Command {
@@ -78,14 +77,11 @@ impl Command {
             "/settings" => Some(Command::Settings),
             "/menu" => Some(Command::Menu),
             "/hidekbd" => Some(Command::HideKbd),
-            "/language" => Some(Command::Language),
-            "/setlang" => Some(Command::SetLanguage),
             "/whitelist" => Some(Command::Whitelist),
             "/whitelist_add" => Some(Command::WhitelistAdd),
             "/whitelist_remove" => Some(Command::WhitelistRemove),
-            "/whitelist_show" => Some(Command::WhitelistShow),
+            "/whitelist_show" => Some(Command::Whitelist),
             "/limits" => Some(Command::Limits),
-            "/toplinks" => Some(Command::TopLinks),
             _ => None,
         }
     }
@@ -104,7 +100,7 @@ impl Command {
         match self {
             Command::Start => {
                 commands::handle_start(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.tr, args).await
-            }
+            },
             Command::Help => commands::handle_help(&ctx.bot, ctx.chat_id, &ctx.tr, args).await,
             Command::Stats => {
                 commands::handle_stats(
@@ -114,81 +110,62 @@ impl Command {
                     &ctx.db,
                     &ctx.user_config,
                     &ctx.tr,
+                    &ctx.lang_code,
                     args,
                 )
                 .await
-            }
+            },
             Command::History => {
                 commands::handle_history(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, &ctx.tr, args)
                     .await
-            }
+            },
             Command::Leaderboard => {
                 commands::handle_leaderboard(&ctx.bot, ctx.chat_id, &ctx.db, &ctx.tr, args).await
-            }
+            },
             Command::Trending => {
                 commands::handle_trending(&ctx.bot, ctx.chat_id, &ctx.db, &ctx.tr, args).await
-            }
+            },
             Command::Domains => {
                 commands::handle_domains(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, &ctx.tr, args)
                     .await
-            }
+            },
             Command::Privacy => {
                 commands::handle_privacy(&ctx.bot, ctx.chat_id, &ctx.tr, args).await
-            }
+            },
             Command::Export => {
                 commands::handle_export(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, &ctx.tr, args)
                     .await
-            }
+            },
             Command::Settings => {
                 commands::handle_settings(
                     &ctx.bot,
                     ctx.chat_id,
                     ctx.user_id,
                     &ctx.db,
-                    &ctx.config,
+                    &ctx.user_config,
                     &ctx.tr,
+                    &ctx.lang_code,
                     args,
                 )
                 .await
-            }
+            },
             Command::Menu => commands::handle_menu(&ctx.bot, ctx.chat_id, &ctx.tr, args).await,
             Command::HideKbd => commands::handle_hidekbd(&ctx.bot, ctx.chat_id, args).await,
-            Command::Language => {
-                commands::handle_language(&ctx.bot, ctx.chat_id, &ctx.tr, args).await
-            }
-            Command::SetLanguage => {
-                commands::handle_set_language(
-                    &ctx.bot,
-                    ctx.chat_id,
-                    ctx.user_id,
-                    &ctx.db,
-                    &ctx.tr,
-                    args,
-                )
-                .await
-            }
-            Command::Whitelist => {
-                commands::handle_whitelist(&ctx.bot, ctx.chat_id, &ctx.tr, args).await
-            }
+            Command::Whitelist | Command::WhitelistShow => {
+                commands::handle_whitelist(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, &ctx.tr, args).await
+            },
             Command::WhitelistAdd => {
                 commands::handle_whitelist_add(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, args)
                     .await
-            }
+            },
             Command::WhitelistRemove => {
                 commands::handle_whitelist_remove(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, args)
                     .await
-            }
-            Command::WhitelistShow => {
-                commands::handle_whitelist_show(&ctx.bot, ctx.chat_id, ctx.user_id, &ctx.db, args)
-                    .await
-            }
+            },
             Command::Limits => {
                 commands::handle_limits(&ctx.bot, ctx.chat_id, &ctx.user_config, &ctx.tr, args)
                     .await
-            }
-            Command::TopLinks => {
-                commands::handle_toplinks(&ctx.bot, ctx.chat_id, &ctx.db, &ctx.tr, args).await
-            }
+            },
         }
     }
 
@@ -207,30 +184,35 @@ impl Command {
             Command::Settings => "/settings",
             Command::Menu => "/menu",
             Command::HideKbd => "/hidekbd",
-            Command::Language => "/language",
-            Command::SetLanguage => "/setlang",
             Command::Whitelist => "/whitelist",
             Command::WhitelistAdd => "/whitelist_add",
             Command::WhitelistRemove => "/whitelist_remove",
             Command::WhitelistShow => "/whitelist_show",
             Command::Limits => "/limits",
-            Command::TopLinks => "/toplinks",
         }
     }
 }
 
 /// Main dispatcher for command routing.
-/// Handles command parsing, throttling, and execution.
+/// Handles command parsing, rate limiting, and execution.
 pub async fn dispatch_command(text: &str, ctx: &CommandContext) -> AppResult<bool> {
-    // Parse command and preserve args
     if let Some((cmd, args)) = Command::parse_with_args(text) {
         debug!(command = %cmd.name(), user_id = ctx.user_id, "Esecuzione comando");
+
+        if check_rate_limit(ctx.user_id).await.is_err() {
+            warn!(user_id = ctx.user_id, "Rate limit superato per comando");
+            let _ = ctx
+                .bot
+                .send_message(ctx.chat_id, "⏱️ Troppe richieste. Attendi qualche secondo.")
+                .await;
+            return Ok(true);
+        }
 
         if let Err(e) = cmd.execute(ctx, &args).await {
             warn!(command = %cmd.name(), error = %e, "Errore nell'esecuzione del comando");
             let _ = ctx
                 .bot
-                .send_message(ctx.chat_id, "❌ Errore nell'esecuzione del comando")
+                .send_message(ctx.chat_id, ctx.tr.cmd_exec_error)
                 .await;
         }
 

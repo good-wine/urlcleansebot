@@ -12,21 +12,7 @@ async fn test_user_config_creation() {
     // Get or create user config
     let config = db.get_user_config(user_id).await.unwrap();
     assert_eq!(config.user_id, user_id);
-    assert_eq!(config.language, "en"); // Default language
-}
-
-#[tokio::test]
-async fn test_user_config_update() {
-    let db = setup_test_db().await;
-    let user_id = 12345;
-
-    // Update language
-    let mut config = db.get_user_config(user_id).await.unwrap();
-    config.language = "it".to_string();
-    db.save_user_config(&config).await.unwrap();
-
-    let updated_config = db.get_user_config(user_id).await.unwrap();
-    assert_eq!(updated_config.language, "it");
+    assert_eq!(config.cleaned_count, 0); // Default cleaned_count
 }
 
 #[tokio::test]

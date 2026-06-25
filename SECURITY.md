@@ -5,69 +5,83 @@
 | Version | Supported |
 |---------|-----------|
 | Latest `main` | Yes |
-| < 1.3 | No |
 
 ## Security Features
 
 ### Input Validation & Sanitization
 
-- **Rate limiting** — moka sync cache with 1 req/sec per user
-- **Input sanitization** — control character stripping, 4000-char cap (`shared/security.rs`)
-- **Callback sanitization** — same rules for callback query data
-- **URL validation** — regex + malicious pattern detection (javascript:, data:, vbscript:, file:, ftp:, mailto:)
+- **Rate limiting** — Async moka future cache, 1 request/second per user (`shared/security.rs`)
+- **Input sanitization** — Control character stripping, 4000-char cap
+- **Callback sanitization** — Same rules for callback query data
+- **URL validation** — Regex + malicious pattern detection (javascript:, data:, vbscript:, file:, ftp:, mailto:)
 - **Telegram text escaping** — HTML entity encoding for `<`, `>`, `&`, `"`, `'`
 - **Domain validation** — RFC-compliant domain format checking
 
+### Multi-Layer URL Sanitization
+
+- **Rule-based** — ClearURLs + AdGuard + Brave + Firefox rules via `url-sanitize-core`
+- **Entropy analysis** — Shannon entropy detection for unknown tracking parameters (>3.0 bits/char)
+- **Normalization** — UTM stripping, parameter sorting, canonicalization via `url-normalize`
+- **AI engine** — Optional OpenAI-compatible pass for edge cases
+
 ### Permission Controls
 
-- **Admin-only actions** — all administrative operations check `ADMIN_ID`
-- **Multi-tenant isolation** — all data scoped by `user_id`
-
-### External Security Integrations (Optional)
-
-- **VirusTotal API** — Real-time malware detection with 70+ antivirus engines
-- **URLScan.io** — Behavioral analysis and web reputation scoring
-- Both are disabled by default and require explicit API key configuration
+- **Admin-only actions** — All administrative operations check `ADMIN_ID`
+- **Multi-tenant isolation** — All data scoped by `user_id`
 
 ### Data Protection
 
-- **No sensitive data in logs** — tokens, keys, and personal data are never logged
-- **Automatic redaction** — sensitive URL parameters redacted in debug output
-- **Environment variables** — `.env` file should have restrictive permissions (`chmod 600`)
-- **Permission validation** — callback query data verifies user ownership before processing
-- **Language isolation** — user language preference scoped per user, no cross-user leakage
+- **No sensitive data in logs** — Tokens, keys, and personal data are never logged
+- **Automatic redaction** — Sensitive URL parameters redacted in debug output
+- **Environment variables** — `.env` should have restrictive permissions (`chmod 600`)
+- **Multi-tenant isolation** — All data scoped by `user_id`
 
-### Container Security
+### CI/CD Security
 
-- Rootless Podman execution
-- Non-root user in container
-- SELinux file labeling
+- **`cargo audit`** — Scans dependencies for known vulnerabilities
+- **`cargo deny`** — Enforces license compliance and vulnerability policy
+- **CodeQL** — GitHub's code scanning on every push
+- **OSV-Scanner** — Google's open-source vulnerability scanner
+- **Dependabot** — Automated dependency updates (weekly)
+
+### Supply Chain Security
+
+- **Lockfile committed** — `Cargo.lock` ensures reproducible builds
+- **Registry sources** — Git dependencies are denied; only crates.io is allowed
+- **`cargo deny` bans** — Prohibited crates (openssl, old time) are explicitly blocked
 
 ## Reporting a Vulnerability
 
 **Do not report security vulnerabilities through public GitHub issues.**
 
-Send security reports to: [security@clearurlsbot.com](mailto:security@clearurlsbot.com)
+### Preferred: GitHub Security Advisory
 
-Include:
+1. Go to the repository's [Security tab](https://github.com/good-wine/urlcleansebot/security)
+2. Click **"Report a vulnerability"**
+3. Fill out the advisory form
+
+### What to Include
+
 - Description of the vulnerability
 - Steps to reproduce
 - Potential impact
 - Suggested fixes (if any)
 
-### Response Timeline
+### Coordinated Disclosure
 
-- **Initial Response**: Within 24 hours
-- **Vulnerability Assessment**: Within 72 hours
-- **Fix Development**: Within 1-2 weeks for critical issues
-- **Public Disclosure**: After fix deployment
+We follow a **90-day coordinated disclosure timeline**:
+
+1. **Day 0** — Report received, acknowledged within 72 hours
+2. **Day 1–30** — Fix developed and tested
+3. **Day 31–60** — Fix deployed to production
+4. **Day 61–90** — Public disclosure after user notification
+5. **Day 90+** — Full write-up published (if applicable)
 
 ## Best Practices for Administrators
 
-1. **Use strong secrets** — Generate random values for `WEBHOOK_SECRET` (16-256 chars, alphanumeric + `_` + `-`)
+1. **Use strong secrets** — Generate random values for `WEBHOOK_SECRET` (at least 32 hex chars)
 2. **Limit admin access** — Set `ADMIN_ID` to a single trusted user
-3. **Enable security scanning** — Configure VirusTotal and URLScan.io API keys
-4. **Monitor logs** — Check bot logs for suspicious activity (`RUST_LOG=debug`)
-5. **Keep updated** — Use the latest version with security patches
-6. **Use HTTPS for webhooks** — Telegram requires HTTPS for webhook URLs
-7. **Restrict `.env` permissions** — `chmod 600 .env`
+3. **Monitor logs** — Check bot logs for suspicious activity
+4. **Keep updated** — Use the latest version with security patches
+5. **Use HTTPS for webhooks** — Telegram requires HTTPS for webhook URLs
+6. **Restrict `.env` permissions** — `chmod 600 .env`

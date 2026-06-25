@@ -1,6 +1,4 @@
-# Allow up to 8 arguments for Telegram callback handlers
-# These functions receive: bot, chat_id, message_id, user_id, callback_data, db, config, tr
-too-many-arguments-threshold = 8
-
-# Allow longer type complexity for Telegram types
-type-complexity-threshold = 500
+msrv = "1.88"
+allow-unwrap-in-tests = true
+allow-print-in-tests = true
+doc-valid-idents = ["Telegra", "ClearURLs", "LibRedirect", "Farside", "URLScan"]

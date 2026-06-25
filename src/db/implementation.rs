@@ -1,6 +1,6 @@
 use super::models::{ChatConfig, CleanedLink, CustomRule, UserConfig};
-use anyhow::Result;
-use sqlx::{any::AnyPoolOptions, Any, Pool};
+use crate::shared::error::AppResult;
+use sqlx::{Any, Pool, any::AnyPoolOptions};
 
 #[derive(Clone)]
 pub struct Db {
@@ -11,7 +11,7 @@ pub struct Db {
 impl Db {
     // init_tables function removed as it's not used and Db::init handles schema creation.
 
-    pub async fn new(database_url: &str) -> Result<Self> {
+    pub async fn new(database_url: &str) -> AppResult<Self> {
         sqlx::any::install_default_drivers();
 
         let pool = AnyPoolOptions::new()
@@ -33,7 +33,7 @@ impl Db {
         self.database_url.starts_with("sqlite")
     }
 
-    pub async fn init(&self) -> Result<()> {
+    pub async fn init(&self) -> AppResult<()> {
         // SQLite schema creation (uses IF NOT EXISTS to preserve data on restart)
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS user_configs (
@@ -43,12 +43,23 @@ impl Db {
                 mode TEXT NOT NULL DEFAULT 'reply',
                 ignored_domains TEXT NOT NULL DEFAULT '',
                 cleaned_count INTEGER NOT NULL DEFAULT 0,
-                language TEXT NOT NULL DEFAULT 'en',
-                privacy_mode INTEGER NOT NULL DEFAULT 0
+                privacy_mode INTEGER NOT NULL DEFAULT 0,
+                honor_creator INTEGER NOT NULL DEFAULT 0,
+                aggressive_mode INTEGER NOT NULL DEFAULT 0
             )",
         )
         .execute(&self.pool)
         .await?;
+
+        sqlx::query("ALTER TABLE user_configs ADD COLUMN aggressive_mode INTEGER NOT NULL DEFAULT 0")
+            .execute(&self.pool)
+            .await
+            .ok();
+
+        sqlx::query("ALTER TABLE user_configs ADD COLUMN dry_run INTEGER NOT NULL DEFAULT 0")
+            .execute(&self.pool)
+            .await
+            .ok();
 
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS chat_configs (
@@ -152,7 +163,7 @@ impl Db {
         original: &str,
         cleaned: &str,
         provider: &str,
-    ) -> Result<()> {
+    ) -> AppResult<()> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs() as i64;
@@ -170,7 +181,7 @@ impl Db {
         Ok(())
     }
 
-    pub async fn get_history(&self, user_id: i64, limit: i64) -> Result<Vec<CleanedLink>> {
+    pub async fn get_history(&self, user_id: i64, limit: i64) -> AppResult<Vec<CleanedLink>> {
         let history = sqlx::query_as::<_, CleanedLink>(
             "SELECT * FROM cleaned_links WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
         )
@@ -181,7 +192,7 @@ impl Db {
         Ok(history)
     }
 
-    pub async fn get_global_stats(&self) -> Result<(i64, i64)> {
+    pub async fn get_global_stats(&self) -> AppResult<(i64, i64)> {
         let total_cleaned: (Option<i64>,) =
             sqlx::query_as("SELECT SUM(cleaned_count) FROM user_configs")
                 .fetch_one(&self.pool)
@@ -192,7 +203,7 @@ impl Db {
         Ok((total_cleaned.0.unwrap_or(0), total_users.0))
     }
 
-    pub async fn get_user_config(&self, user_id: i64) -> Result<UserConfig> {
+    pub async fn get_user_config(&self, user_id: i64) -> AppResult<UserConfig> {
         let config =
             sqlx::query_as::<_, UserConfig>("SELECT * FROM user_configs WHERE user_id = ?")
                 .bind(user_id)
@@ -206,15 +217,17 @@ impl Db {
             mode: "reply".to_string(),
             ignored_domains: String::new(),
             cleaned_count: 0,
-            language: "en".to_string(),
             privacy_mode: 0,
+            honor_creator: 0,
+            aggressive_mode: 0,
+            dry_run: 0,
         }))
     }
 
-    pub async fn save_user_config(&self, config: &UserConfig) -> Result<()> {
+    pub async fn save_user_config(&self, config: &UserConfig) -> AppResult<()> {
         sqlx::query(
-            "INSERT INTO user_configs (user_id, enabled, ai_enabled, mode, ignored_domains, cleaned_count, language, privacy_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(user_id) DO UPDATE SET enabled = ?, ai_enabled = ?, mode = ?, ignored_domains = ?, cleaned_count = ?, language = ?, privacy_mode = ?"
+            "INSERT INTO user_configs (user_id, enabled, ai_enabled, mode, ignored_domains, cleaned_count, privacy_mode, honor_creator, aggressive_mode, dry_run) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(user_id) DO UPDATE SET enabled = ?, ai_enabled = ?, mode = ?, ignored_domains = ?, cleaned_count = ?, privacy_mode = ?, honor_creator = ?, aggressive_mode = ?, dry_run = ?"
         )
         .bind(config.user_id)
         .bind(config.enabled)
@@ -222,21 +235,25 @@ impl Db {
         .bind(&config.mode)
         .bind(&config.ignored_domains)
         .bind(config.cleaned_count)
-        .bind(&config.language)
         .bind(config.privacy_mode)
+        .bind(config.honor_creator)
+        .bind(config.aggressive_mode)
+        .bind(config.dry_run)
         .bind(config.enabled)
         .bind(config.ai_enabled)
         .bind(&config.mode)
         .bind(&config.ignored_domains)
         .bind(config.cleaned_count)
-        .bind(&config.language)
         .bind(config.privacy_mode)
+        .bind(config.honor_creator)
+        .bind(config.aggressive_mode)
+        .bind(config.dry_run)
         .execute(&self.pool)
         .await?;
         Ok(())
     }
 
-    pub async fn increment_cleaned_count(&self, user_id: i64, amount: i64) -> Result<()> {
+    pub async fn increment_cleaned_count(&self, user_id: i64, amount: i64) -> AppResult<()> {
         sqlx::query(
             "INSERT INTO user_configs (user_id, cleaned_count) VALUES (?, ?)
              ON CONFLICT(user_id) DO UPDATE SET cleaned_count = cleaned_count + ?",
@@ -249,7 +266,7 @@ impl Db {
         Ok(())
     }
 
-    pub async fn get_custom_rules(&self, user_id: i64) -> Result<Vec<CustomRule>> {
+    pub async fn get_custom_rules(&self, user_id: i64) -> AppResult<Vec<CustomRule>> {
         let rules = sqlx::query_as::<_, CustomRule>("SELECT * FROM custom_rules WHERE user_id = ?")
             .bind(user_id)
             .fetch_all(&self.pool)
@@ -257,7 +274,7 @@ impl Db {
         Ok(rules)
     }
 
-    pub async fn clear_history(&self, user_id: i64) -> Result<()> {
+    pub async fn clear_history(&self, user_id: i64) -> AppResult<()> {
         sqlx::query("DELETE FROM cleaned_links WHERE user_id = ?")
             .bind(user_id)
             .execute(&self.pool)
@@ -265,7 +282,7 @@ impl Db {
         Ok(())
     }
 
-    pub async fn add_custom_rule(&self, user_id: i64, pattern: &str) -> Result<()> {
+    pub async fn add_custom_rule(&self, user_id: i64, pattern: &str) -> AppResult<()> {
         sqlx::query("INSERT INTO custom_rules (user_id, pattern) VALUES (?, ?)")
             .bind(user_id)
             .bind(pattern)
@@ -274,7 +291,7 @@ impl Db {
         Ok(())
     }
 
-    pub async fn get_stats_by_day(&self, user_id: i64) -> Result<Vec<(String, i64)>> {
+    pub async fn get_stats_by_day(&self, user_id: i64) -> AppResult<Vec<(String, i64)>> {
         let query = if self.is_sqlite() {
             "SELECT date(timestamp, 'unixepoch') as day, COUNT(*) 
              FROM cleaned_links 
@@ -294,7 +311,7 @@ impl Db {
         Ok(stats)
     }
 
-    pub async fn get_chat_config(&self, chat_id: i64) -> Result<Option<ChatConfig>> {
+    pub async fn get_chat_config(&self, chat_id: i64) -> AppResult<Option<ChatConfig>> {
         let config =
             sqlx::query_as::<_, ChatConfig>("SELECT * FROM chat_configs WHERE chat_id = ?")
                 .bind(chat_id)
@@ -304,7 +321,7 @@ impl Db {
         Ok(config)
     }
 
-    pub async fn get_chat_config_or_default(&self, chat_id: i64) -> Result<ChatConfig> {
+    pub async fn get_chat_config_or_default(&self, chat_id: i64) -> AppResult<ChatConfig> {
         let config = self.get_chat_config(chat_id).await?;
 
         Ok(config.unwrap_or(ChatConfig {
@@ -316,7 +333,7 @@ impl Db {
         }))
     }
 
-    pub async fn save_chat_config(&self, config: &ChatConfig) -> Result<()> {
+    pub async fn save_chat_config(&self, config: &ChatConfig) -> AppResult<()> {
         sqlx::query(
             "INSERT INTO chat_configs (chat_id, title, enabled, added_by, mode) VALUES (?, ?, ?, ?, ?)
              ON CONFLICT(chat_id) DO UPDATE SET title = ?, enabled = ?, mode = ?"
@@ -334,7 +351,7 @@ impl Db {
         Ok(())
     }
 
-    pub async fn get_chats_for_user(&self, user_id: i64) -> Result<Vec<ChatConfig>> {
+    pub async fn get_chats_for_user(&self, user_id: i64) -> AppResult<Vec<ChatConfig>> {
         let chats =
             sqlx::query_as::<_, ChatConfig>("SELECT * FROM chat_configs WHERE added_by = ?")
                 .bind(user_id)
@@ -343,7 +360,7 @@ impl Db {
         Ok(chats)
     }
 
-    pub async fn get_top_users(&self, limit: usize) -> Result<Vec<(i64, i64)>> {
+    pub async fn get_top_users(&self, limit: usize) -> AppResult<Vec<(i64, i64)>> {
         let rows = sqlx::query_as::<_, (i64, i64)>(
             "SELECT user_id, cleaned_count FROM user_configs ORDER BY cleaned_count DESC LIMIT ?",
         )
@@ -353,7 +370,7 @@ impl Db {
         Ok(rows)
     }
 
-    pub async fn get_top_links(&self, limit: usize) -> Result<Vec<(String, i64)>> {
+    pub async fn get_top_links(&self, limit: usize) -> AppResult<Vec<(String, i64)>> {
         let rows = sqlx::query_as::<_, (String, i64)>(
             "SELECT original_url, COUNT(*) as cleaned_count FROM cleaned_links GROUP BY original_url ORDER BY cleaned_count DESC LIMIT ?"
         )
@@ -363,7 +380,7 @@ impl Db {
         Ok(rows)
     }
 
-    pub async fn add_to_whitelist(&self, user_id: i64, domain: &str) -> Result<()> {
+    pub async fn add_to_whitelist(&self, user_id: i64, domain: &str) -> AppResult<()> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs() as i64;
@@ -378,7 +395,7 @@ impl Db {
         Ok(())
     }
 
-    pub async fn remove_from_whitelist(&self, user_id: i64, domain: &str) -> Result<()> {
+    pub async fn remove_from_whitelist(&self, user_id: i64, domain: &str) -> AppResult<()> {
         sqlx::query("DELETE FROM whitelist_urls WHERE user_id = ? AND domain = ?")
             .bind(user_id)
             .bind(domain)
@@ -388,7 +405,7 @@ impl Db {
         Ok(())
     }
 
-    pub async fn get_whitelist(&self, user_id: i64) -> Result<Vec<String>> {
+    pub async fn get_whitelist(&self, user_id: i64) -> AppResult<Vec<String>> {
         let rows = sqlx::query_as::<_, (String,)>(
             "SELECT domain FROM whitelist_urls WHERE user_id = ? ORDER BY added_at DESC",
         )
@@ -399,7 +416,7 @@ impl Db {
         Ok(rows.into_iter().map(|(domain,)| domain).collect())
     }
 
-    pub async fn is_whitelisted(&self, user_id: i64, domain: &str) -> Result<bool> {
+    pub async fn is_whitelisted(&self, user_id: i64, domain: &str) -> AppResult<bool> {
         let result = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM whitelist_urls WHERE user_id = ? AND domain = ?",
         )
@@ -411,7 +428,7 @@ impl Db {
         Ok(result > 0)
     }
 
-    pub async fn get_domain_cleanup_stats(&self, user_id: i64) -> Result<Vec<(String, i64)>> {
+    pub async fn get_domain_cleanup_stats(&self, user_id: i64) -> AppResult<Vec<(String, i64)>> {
         let query = if self.is_sqlite() {
             "SELECT 
                 SUBSTR(original_url, INSTR(original_url, '://') + 3, 
@@ -448,7 +465,7 @@ impl Db {
         user_id: i64,
         feature_name: &str,
         enabled: bool,
-    ) -> Result<()> {
+    ) -> AppResult<()> {
         let enabled_val = if enabled { 1 } else { 0 };
 
         sqlx::query(
@@ -466,7 +483,7 @@ impl Db {
     }
 
     /// Check if a feature is enabled for a user
-    pub async fn is_feature_enabled(&self, user_id: i64, feature_name: &str) -> Result<bool> {
+    pub async fn is_feature_enabled(&self, user_id: i64, feature_name: &str) -> AppResult<bool> {
         let result = sqlx::query_scalar::<_, i32>(
             "SELECT enabled FROM feature_flags WHERE user_id = ? AND feature_name = ?",
         )
@@ -479,7 +496,7 @@ impl Db {
     }
 
     /// Get all feature flags for a user
-    pub async fn get_user_features(&self, user_id: i64) -> Result<Vec<(String, bool)>> {
+    pub async fn get_user_features(&self, user_id: i64) -> AppResult<Vec<(String, bool)>> {
         let rows = sqlx::query_as::<_, (String, i32)>(
             "SELECT feature_name, enabled FROM feature_flags WHERE user_id = ?",
         )

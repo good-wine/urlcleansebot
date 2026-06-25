@@ -1,0 +1,16 @@
+edition = "2024"
+newline_style = "Unix"
+use_field_init_shorthand = true
+match_block_trailing_comma = true
+hard_tabs = false
+tab_spaces = 4
+max_width = 120
+fn_call_width = 80
+attr_fn_like_width = 80
+struct_lit_width = 80
+struct_variant_width = 80
+use_small_heuristics = "Default"
+imports_granularity = "Item"
+reorder_impl_items = true
+reorder_modules = true
+format_strings = false

@@ -9,8 +9,10 @@ pub struct UserConfig {
     pub mode: String,            // "reply" or "delete"
     pub ignored_domains: String, // Comma-separated list
     pub cleaned_count: i64,
-    pub language: String,  // "en", "it", etc.
     pub privacy_mode: i32, // 1=enabled, 0=disabled
+    pub honor_creator: i32, // 1=preserve affiliate tags, 0=clean everything
+    pub aggressive_mode: i32, // 1=whitelist-only cleaning, 0=standard
+    pub dry_run: i32, // 1=dry-run mode (show what would be cleaned, don't actually clean), 0=normal
 }
 
 impl UserConfig {
@@ -19,6 +21,15 @@ impl UserConfig {
     }
     pub fn is_ai_enabled(&self) -> bool {
         self.ai_enabled != 0
+    }
+    pub fn is_honor_creator(&self) -> bool {
+        self.honor_creator != 0
+    }
+    pub fn is_aggressive(&self) -> bool {
+        self.aggressive_mode != 0
+    }
+    pub fn is_dry_run(&self) -> bool {
+        self.dry_run != 0
     }
 }
 
@@ -31,8 +42,10 @@ impl Default for UserConfig {
             mode: "reply".to_string(),
             ignored_domains: String::new(),
             cleaned_count: 0,
-            language: "en".to_string(),
             privacy_mode: 0,
+            honor_creator: 0,
+            aggressive_mode: 0,
+            dry_run: 0,
         }
     }
 }

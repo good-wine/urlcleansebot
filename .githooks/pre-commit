@@ -1,0 +1,43 @@
+#!/bin/sh
+# Pre-commit hook: verify code quality before every commit.
+# Install: git config core.hooksPath .githooks
+#
+# Skips checks if SKIP=1 or GIT_NO_VERIFY=1 is set.
+
+if [ "${SKIP}" = "1" ] || [ "${GIT_NO_VERIFY}" = "1" ]; then
+    exit 0
+fi
+
+echo "=== Pre-commit checks ==="
+
+STASH_NAME="pre-commit-$(date +%s)"
+git stash push -q --keep-index --message "${STASH_NAME}" 2>/dev/null || true
+
+FAILED=0
+
+run_check() {
+    if ! "$@" 2>&1; then
+        echo "FAILED: $*"
+        FAILED=1
+    fi
+}
+
+run_check cargo check --locked --all-targets
+run_check cargo fmt --all -- --check
+run_check cargo clippy --all-targets -- -D warnings
+
+# Typos check (optional — skip if typos not installed)
+if command -v typos >/dev/null 2>&1; then
+    run_check typos
+fi
+
+git stash pop -q 2>/dev/null || true
+
+if [ "${FAILED}" = "1" ]; then
+    echo ""
+    echo "❌ Pre-commit checks failed. Fix errors before committing."
+    echo "   To skip: SKIP=1 git commit  or  GIT_NO_VERIFY=1 git commit"
+    exit 1
+fi
+
+echo "✅ Pre-commit checks passed."

@@ -8,8 +8,6 @@ use teloxide::types::{
     InlineQueryResultArticle, InputMessageContent, InputMessageContentText, KeyboardButton,
     KeyboardMarkup, Message, MessageEntityKind, MessageId, ParseMode,
 };
-use teloxide::utils::html;
-use whatlang::{detect, Lang};
 
 use std::collections::HashSet;
 
@@ -65,16 +63,10 @@ pub fn is_message_not_modified_error(error_text: &str) -> bool {
 }
 
 pub async fn get_user_language(
-    db: &crate::db::Db,
-    user_id: i64,
+    _db: &crate::db::Db,
+    _user_id: i64,
     telegram_lang: Option<&str>,
 ) -> String {
-    if let Ok(cfg) = db.get_user_config(user_id).await {
-        if !cfg.language.is_empty() && SUPPORTED_LANGUAGES.contains(&cfg.language.as_str()) {
-            return cfg.language.clone();
-        }
-    }
-
     if let Some(l) = telegram_lang {
         for &code in SUPPORTED_LANGUAGES {
             if l.starts_with(code) {
@@ -101,9 +93,8 @@ pub fn main_reply_keyboard(tr: &i18n::Translations) -> KeyboardMarkup {
         ],
         vec![
             KeyboardButton::new(tr.rk_help),
-            KeyboardButton::new(tr.rk_language),
+            KeyboardButton::new(tr.rk_hidekbd),
         ],
-        vec![KeyboardButton::new(tr.rk_hidekbd)],
     ])
     .resize_keyboard()
 }
@@ -114,7 +105,6 @@ pub enum QuickReplyAction {
     Stats,
     Help,
     HideKeyboard,
-    Language,
 }
 
 pub fn quick_reply_action(text: &str, tr: &i18n::Translations) -> Option<QuickReplyAction> {
@@ -127,8 +117,6 @@ pub fn quick_reply_action(text: &str, tr: &i18n::Translations) -> Option<QuickRe
         Some(QuickReplyAction::Help)
     } else if trimmed == tr.rk_hidekbd {
         Some(QuickReplyAction::HideKeyboard)
-    } else if trimmed == tr.rk_language {
-        Some(QuickReplyAction::Language)
     } else {
         None
     }
@@ -146,10 +134,10 @@ pub fn quick_actions_inline_keyboard(
             ),
             InlineKeyboardButton::callback(tr.start_view_stats, format!("quick:stats:{}", user_id)),
         ],
-        vec![
-            InlineKeyboardButton::callback(tr.s_language, format!("quick:language:{}", user_id)),
-            InlineKeyboardButton::callback(tr.s_back_to_main, format!("back_to_main:{}", user_id)),
-        ],
+        vec![InlineKeyboardButton::callback(
+            tr.s_back_to_main,
+            format!("back_to_main:{}", user_id),
+        )],
     ])
 }
 
@@ -177,51 +165,6 @@ pub fn language_name(code: &str) -> String {
         other => other,
     }
     .to_string()
-}
-
-pub fn language_inline_keyboard(tr: &i18n::Translations, user_id: i64) -> InlineKeyboardMarkup {
-    let lang_codes = SUPPORTED_LANGUAGES;
-    let mut rows: Vec<Vec<InlineKeyboardButton>> = Vec::new();
-    let lang_labels = [
-        tr.s_language_it,
-        tr.s_language_en,
-        tr.s_language_es,
-        tr.s_language_fr,
-        tr.s_language_de,
-        tr.s_language_pt,
-        tr.s_language_ru,
-        tr.s_language_ar,
-        tr.s_language_hi,
-        tr.s_language_zh,
-        tr.s_language_ja,
-        tr.s_language_ko,
-        tr.s_language_tr,
-        tr.s_language_nl,
-        tr.s_language_pl,
-    ];
-
-    for chunk in lang_codes.chunks(4) {
-        let start_idx = lang_codes.iter().position(|&x| x == chunk[0]).unwrap_or(0);
-        let row: Vec<InlineKeyboardButton> = chunk
-            .iter()
-            .enumerate()
-            .map(|(i, &code)| {
-                let label = lang_labels[start_idx + i];
-                InlineKeyboardButton::callback(
-                    label,
-                    format!("user_setting:lang:{}:{}", code, user_id),
-                )
-            })
-            .collect();
-        rows.push(row);
-    }
-
-    rows.push(vec![InlineKeyboardButton::callback(
-        tr.s_back,
-        format!("settings:{}", user_id),
-    )]);
-
-    InlineKeyboardMarkup::new(rows)
 }
 
 pub fn single_back_keyboard(label: &str, callback_data: String) -> InlineKeyboardMarkup {
@@ -258,7 +201,7 @@ pub async fn upsert_settings_view(
                 if is_message_not_modified_error(&err.to_string()) {
                     return Ok(());
                 }
-            }
+            },
         }
     }
 
@@ -358,100 +301,6 @@ pub fn admin_maintenance_keyboard(tr: &i18n::Translations, user_id: i64) -> Inli
     ])
 }
 
-pub async fn build_redirect_reply(
-    svc: &RedirectService,
-    arg: &str,
-    tr: &i18n::Translations,
-) -> String {
-    let is_it = tr.welcome.contains("Benvenuto") || tr.welcome.contains("benvenuto");
-    if arg.is_empty() {
-        return if is_it {
-            "ℹ️ Uso: <code>/redirect &lt;url&gt;</code>\nEsempio: <code>/redirect youtube.com</code>".into()
-        } else {
-            "ℹ️ Usage: <code>/redirect &lt;url&gt;</code>\nExample: <code>/redirect youtube.com</code>".into()
-        };
-    }
-    if crate::redirects::extract_host(arg).is_err() {
-        return if is_it {
-            "⚠️ URL non valido. Usa <code>/redirect &lt;url&gt;</code> con un dominio valido."
-                .into()
-        } else {
-            "⚠️ Invalid URL. Use <code>/redirect &lt;url&gt;</code> with a valid domain.".into()
-        };
-    }
-    match svc.lookup(arg).await {
-        Ok(Some(hit)) => crate::redirects::format_hit_html(&hit, 5, arg),
-        Ok(None) => {
-            if is_it {
-                format!(
-                    "🤷 Nessun frontend alternativo conosciuto per <code>{}</code>.",
-                    html::escape(arg)
-                )
-            } else {
-                format!(
-                    "🤷 No known alternative frontend for <code>{}</code>.",
-                    html::escape(arg)
-                )
-            }
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, arg = %arg, "redirect lookup failed");
-            if is_it {
-                "⚠️ Impossibile contattare le sorgenti di redirect. Riprova più tardi.".into()
-            } else {
-                "⚠️ Could not reach redirect catalogues. Please retry later.".into()
-            }
-        }
-    }
-}
-
-pub fn detect_language(
-    text: &str,
-    msg: &Message,
-    user_config: &crate::db::models::UserConfig,
-) -> String {
-    let detected_lang = if text.is_empty() {
-        None
-    } else {
-        detect(text).map(|info| info.lang())
-    };
-
-    let telegram_lang = msg.from.as_ref().and_then(|u| u.language_code.as_deref());
-
-    let lang_from_whatlang = match detected_lang {
-        Some(Lang::Ita) => "it",
-        Some(Lang::Eng) => "en",
-        Some(Lang::Spa) => "es",
-        Some(Lang::Fra) => "fr",
-        Some(Lang::Deu) => "de",
-        Some(Lang::Por) => "pt",
-        Some(Lang::Rus) => "ru",
-        Some(Lang::Ara) => "ar",
-        Some(Lang::Hin) => "hi",
-        Some(Lang::Cmn) => "zh",
-        Some(Lang::Jpn) => "ja",
-        Some(Lang::Kor) => "ko",
-        Some(Lang::Tur) => "tr",
-        Some(Lang::Nld) => "nl",
-        Some(Lang::Pol) => "pl",
-        _ => "",
-    };
-
-    if !lang_from_whatlang.is_empty() {
-        return lang_from_whatlang.to_string();
-    }
-
-    if let Some(l) = telegram_lang {
-        for &code in SUPPORTED_LANGUAGES {
-            if l.starts_with(code) {
-                return code.to_string();
-            }
-        }
-    }
-
-    user_config.language.clone()
-}
-
 pub fn has_url_entities(msg: &Message, text: &str) -> bool {
     if let Some(ents) = msg.entities() {
         for entity in ents {
@@ -481,7 +330,7 @@ pub fn extract_urls_from_message(msg: &Message, text: &str) -> Vec<String> {
                         continue;
                     }
                     String::from_utf16_lossy(&utf16[start..end])
-                }
+                },
                 MessageEntityKind::TextLink { url } => url.to_string(),
                 _ => continue,
             };
@@ -530,14 +379,10 @@ pub fn build_inline_help_article(lang_code: &str) -> InlineQueryResult {
     InlineQueryResult::Article(article)
 }
 
-pub fn build_inline_no_results(query: &str, lang_code: &str) -> InlineQueryResult {
+pub fn build_inline_no_results(query: &str, tr: &i18n::Translations) -> InlineQueryResult {
     let article = InlineQueryResultArticle::new(
         "inline-no-results",
-        if lang_code == "it" {
-            "Nessun URL da pulire"
-        } else {
-            "No cleanable URL found"
-        },
+        tr.inline_no_results,
         InputMessageContent::Text(InputMessageContentText::new(query.to_string())),
     );
     InlineQueryResult::Article(article)
@@ -547,18 +392,14 @@ pub fn build_inline_clean_result(
     rank: usize,
     cleaned: &str,
     removed_params: usize,
-    lang_code: &str,
+    tr: &i18n::Translations,
 ) -> InlineQueryResult {
-    let title = if lang_code == "it" {
-        if removed_params > 0 {
-            format!("URL pulito #{} (−{} param)", rank + 1, removed_params)
-        } else {
-            format!("URL pulito #{}", rank + 1)
-        }
-    } else if removed_params > 0 {
-        format!("Clean URL #{} (-{} params)", rank + 1, removed_params)
+    let title = if removed_params > 0 {
+        tr.inline_clean_params
+            .replace("{}", &(rank + 1).to_string())
+            .replace("{}", &removed_params.to_string())
     } else {
-        format!("Clean URL #{}", rank + 1)
+        tr.inline_clean.replace("{}", &(rank + 1).to_string())
     };
 
     let content = InputMessageContent::Text(InputMessageContentText::new(cleaned.to_string()));
@@ -678,19 +519,6 @@ mod tests {
         let message = admin_maintenance_message(&tr);
         assert!(message.contains(tr.s_maintenance));
         assert!(message.contains(tr.s_admin_maintenance_none));
-    }
-
-    #[test]
-    fn build_redirect_reply_invalid_url_returns_error_message() {
-        let svc = crate::redirects::RedirectService::with_urls(
-            "http://x.invalid",
-            "http://x.invalid",
-            std::time::Duration::from_secs(60),
-        )
-        .unwrap();
-        let tr = i18n::get_translations("en");
-        let out = futures::executor::block_on(super::build_redirect_reply(&svc, "not a url", &tr));
-        assert!(out.contains("Invalid URL") || out.contains("URL non valido"));
     }
 
     #[test]

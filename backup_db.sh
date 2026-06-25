@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # Configuration
-DATABASE_URL="${1:-${DATABASE_URL:-sqlite:clearurls.db}}"
+DATABASE_URL="${1:-${DATABASE_URL:-sqlite:urlcleanse.db}}"
 BACKUP_DIR="${2:-./backups}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 MAX_BACKUPS="${MAX_BACKUPS:-10}"
@@ -42,7 +42,7 @@ if [[ "$DATABASE_URL" == sqlite:* ]]; then
         exit 1
     fi
     
-    BACKUP_FILE="$BACKUP_DIR/clearurls_backup_$TIMESTAMP.db"
+    BACKUP_FILE="$BACKUP_DIR/urlcleanse_backup_$TIMESTAMP.db"
     log_info "Creating SQLite backup..."
     
     if command -v sqlite3 &> /dev/null; then
@@ -62,9 +62,9 @@ if [[ -f "$BACKUP_FILE" ]]; then
     log_info "Backup created: $BACKUP_FILE ($SIZE)"
     
     # Cleanup old backups
-    find "$BACKUP_DIR" -name "clearurls_backup_*.db.gz" -type f -mtime +$RETENTION_DAYS -delete 2>/dev/null || true
+    find "$BACKUP_DIR" -name "urlcleanse_backup_*.db.gz" -type f -mtime +$RETENTION_DAYS -delete 2>/dev/null || true
     
-    REMAINING=$(find "$BACKUP_DIR" -name "clearurls_backup_*" -type f | wc -l)
+    REMAINING=$(find "$BACKUP_DIR" -name "urlcleanse_backup_*" -type f | wc -l)
     log_info "Total backups: $REMAINING"
 else
     log_error "Backup failed"

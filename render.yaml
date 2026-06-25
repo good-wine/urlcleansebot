@@ -1,11 +1,11 @@
 services:
   - type: web
-    name: clearurlsbot
+    name: urlcleansebot
     runtime: rust
     plan: free
     region: oregon
     buildCommand: cargo build --release --locked
-    startCommand: ./target/release/clear_urls_bot
+    startCommand: ./target/release/url_cleanse_bot
     healthCheckPath: /health
     envVars:
       - key: TELOXIDE_TOKEN

@@ -1,0 +1,23 @@
+# Auto-detect text files and enforce LF
+* text=auto eol=lf
+
+# Rust
+*.rs text diff=rust
+*.toml text
+*.lock text
+
+# Markdown
+*.md text
+
+# YAML
+*.yml text
+*.yaml text
+
+# Shell scripts
+*.sh text eol=lf
+.githooks/* text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.ico binary

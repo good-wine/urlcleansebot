@@ -10,11 +10,11 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use crate::shared::error::{AppError, AppResult};
 use reqwest::Client;
 use url::Url;
 
-use super::cache::{SingleEntryCache, DEFAULT_TTL};
+use super::cache::{DEFAULT_TTL, SingleEntryCache};
 use super::models::{Frontend, FrontendSource, LibRedirectDoc, LookupHit};
 use crate::http_utils::retry_http_request;
 
@@ -156,23 +156,23 @@ struct Inner {
 
 impl RedirectService {
     /// Build a service with the production upstream URLs and the default TTL.
-    pub fn new() -> Result<Self> {
+    pub fn new() -> AppResult<Self> {
         Self::with_urls(LIBREDIRECT_URL, FARSIDE_URL, DEFAULT_TTL)
     }
 
     /// Build a service with URLs from configuration.
-    pub fn from_config(libredirect_url: &str, farside_url: &str) -> Result<Self> {
+    pub fn from_config(libredirect_url: &str, farside_url: &str) -> AppResult<Self> {
         Self::with_urls(libredirect_url, farside_url, DEFAULT_TTL)
     }
 
     /// Build a service overriding upstream URLs and TTL — used in tests
     /// against a local mock server.
-    pub fn with_urls(libredirect_url: &str, farside_url: &str, ttl: Duration) -> Result<Self> {
+    pub fn with_urls(libredirect_url: &str, farside_url: &str, ttl: Duration) -> AppResult<Self> {
         let http = Client::builder()
             .timeout(FETCH_TIMEOUT)
-            .user_agent(concat!("clear_urls_bot/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("url_cleanse_bot/", env!("CARGO_PKG_VERSION")))
             .build()
-            .context("build redirect HTTP client")?;
+            .map_err(|e| AppError::Internal(format!("build redirect HTTP client: {e}")))?;
         Ok(Self {
             inner: Arc::new(Inner {
                 http,
@@ -196,13 +196,14 @@ impl RedirectService {
     /// `Err` only on infrastructure failure (network down, malformed JSON);
     /// callers are expected to surface a friendly fallback message in that
     /// case.
-    pub async fn lookup(&self, raw_url: &str) -> Result<Option<LookupHit>> {
-        let host = extract_host(raw_url).context("parse input URL")?;
+    pub async fn lookup(&self, raw_url: &str) -> AppResult<Option<LookupHit>> {
+        let host = extract_host(raw_url)
+            .map_err(|e| AppError::Internal(format!("parse input URL: {e}")))?;
         self.lookup_by_host(&host).await
     }
 
     /// Lookup frontends for a bare hostname (no scheme).
-    pub async fn lookup_by_host(&self, host: &str) -> Result<Option<LookupHit>> {
+    pub async fn lookup_by_host(&self, host: &str) -> AppResult<Option<LookupHit>> {
         let host = host.trim_start_matches("www.").to_ascii_lowercase();
         let lib = self.fetch_libredirect().await?;
         let far = self.fetch_farside().await?;
@@ -234,7 +235,7 @@ impl RedirectService {
         }))
     }
 
-    async fn fetch_libredirect(&self) -> Result<Arc<LibRedirectDoc>> {
+    async fn fetch_libredirect(&self) -> AppResult<Arc<LibRedirectDoc>> {
         let http = self.inner.http.clone();
         let url = self.inner.libredirect_url.clone();
         self.inner
@@ -242,18 +243,22 @@ impl RedirectService {
             .get_or_try_insert_with(|| async move {
                 let resp = retry_http_request(|| http.get(&url), "fetch libredirect catalogue")
                     .await
-                    .context("GET libredirect")?;
+                    .map_err(|e| AppError::Internal(format!("GET libredirect: {e}")))?;
                 let status = resp.status();
                 if !status.is_success() {
-                    return Err(anyhow!("libredirect HTTP {status}"));
+                    return Err(AppError::Internal(format!("libredirect HTTP {status}")));
                 }
-                let body = resp.text().await.context("read libredirect body")?;
-                serde_json::from_str::<LibRedirectDoc>(&body).context("parse libredirect JSON")
+                let body = resp
+                    .text()
+                    .await
+                    .map_err(|e| AppError::Internal(format!("read libredirect body: {e}")))?;
+                serde_json::from_str::<LibRedirectDoc>(&body)
+                    .map_err(|e| AppError::Internal(format!("parse libredirect JSON: {e}")))
             })
             .await
     }
 
-    async fn fetch_farside(&self) -> Result<Arc<Vec<super::models::FarsideService>>> {
+    async fn fetch_farside(&self) -> AppResult<Arc<Vec<super::models::FarsideService>>> {
         let http = self.inner.http.clone();
         let url = self.inner.farside_url.clone();
         self.inner
@@ -261,14 +266,17 @@ impl RedirectService {
             .get_or_try_insert_with(|| async move {
                 let resp = retry_http_request(|| http.get(&url), "fetch farside catalogue")
                     .await
-                    .context("GET farside")?;
+                    .map_err(|e| AppError::Internal(format!("GET farside: {e}")))?;
                 let status = resp.status();
                 if !status.is_success() {
-                    return Err(anyhow!("farside HTTP {status}"));
+                    return Err(AppError::Internal(format!("farside HTTP {status}")));
                 }
-                let body = resp.text().await.context("read farside body")?;
+                let body = resp
+                    .text()
+                    .await
+                    .map_err(|e| AppError::Internal(format!("read farside body: {e}")))?;
                 serde_json::from_str::<Vec<super::models::FarsideService>>(&body)
-                    .context("parse farside JSON")
+                    .map_err(|e| AppError::Internal(format!("parse farside JSON: {e}")))
             })
             .await
     }
@@ -277,10 +285,10 @@ impl RedirectService {
 /// Extract the lowercased host (without `www.`) from a URL or bare host.
 ///
 /// Accepts both `https://youtube.com/watch?v=...` and `youtube.com/watch?...`.
-pub fn extract_host(input: &str) -> Result<String> {
+pub fn extract_host(input: &str) -> AppResult<String> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
-        return Err(anyhow!("empty URL"));
+        return Err(AppError::Internal("empty URL".into()));
     }
     // url::Url requires a scheme; prepend one if missing.
     let with_scheme = if trimmed.contains("://") {
@@ -288,10 +296,11 @@ pub fn extract_host(input: &str) -> Result<String> {
     } else {
         format!("https://{trimmed}")
     };
-    let parsed = Url::parse(&with_scheme).context("invalid URL")?;
+    let parsed =
+        Url::parse(&with_scheme).map_err(|e| AppError::Internal(format!("invalid URL: {e}")))?;
     let host = parsed
         .host_str()
-        .ok_or_else(|| anyhow!("URL has no host"))?
+        .ok_or_else(|| AppError::Internal("URL has no host".into()))?
         .trim_end_matches('.')
         .trim_start_matches("www.")
         .to_ascii_lowercase();
@@ -369,14 +378,13 @@ fn extract_youtube_video_id(url: &Url) -> Option<String> {
     }
 
     // /watch?v=VIDEO_ID
-    if url.path() == "/watch" {
-        if let Some(v) = url
+    if url.path() == "/watch"
+        && let Some(v) = url
             .query_pairs()
             .find(|(k, _)| k == "v")
             .map(|(_, v)| v.to_string())
-        {
-            return Some(v);
-        }
+    {
+        return Some(v);
     }
 
     // /shorts/VIDEO_ID
@@ -470,7 +478,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
         "piped" => {
             if let Some(video_id) = extract_youtube_video_id(&parsed) {
                 return format!("{frontend_base}/watch?v={video_id}");
@@ -480,7 +488,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
         "pipedMaterial" => {
             if let Some(video_id) = extract_youtube_video_id(&parsed) {
                 return format!("{frontend_base}/watch?v={video_id}");
@@ -490,7 +498,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
         "cloudtube" => {
             if let Some(video_id) = extract_youtube_video_id(&parsed) {
                 return format!("{frontend_base}/video/{video_id}");
@@ -500,7 +508,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
         "materialious" => {
             if let Some(video_id) = extract_youtube_video_id(&parsed) {
                 return format!("{frontend_base}/watch/{video_id}");
@@ -510,7 +518,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
         "hyperpipe" => {
             if let Some(video_id) = extract_youtube_video_id(&parsed) {
                 return format!("{frontend_base}/watch?v={video_id}");
@@ -520,7 +528,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
         "suds" => {
             if let Some(video_id) = extract_youtube_video_id(&parsed) {
                 return format!("{frontend_base}/watch/{video_id}");
@@ -530,7 +538,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
         "poke" => {
             if let Some(video_id) = extract_youtube_video_id(&parsed) {
                 return format!("{frontend_base}/watch?v={video_id}");
@@ -540,7 +548,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
         "vixipy" => {
             if let Some(video_id) = extract_youtube_video_id(&parsed) {
                 return format!("{frontend_base}/watch/{video_id}");
@@ -550,7 +558,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Twitter/X frontends ───
         "nitter" | "twineo" => {
@@ -562,7 +570,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Reddit frontends ───
         "redlib" | "libreddit" | "teddit" => {
@@ -574,7 +582,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── TikTok frontends ───
         "proxiTok" => {
@@ -586,7 +594,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Medium frontends ───
         "scribe" | "libMedium" => {
@@ -595,7 +603,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Wikipedia frontends ───
         "wikiless" => {
@@ -604,7 +612,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Fandom frontend ───
         "breezeWiki" => {
@@ -613,7 +621,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Quora frontend ───
         "quetre" => {
@@ -622,7 +630,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── IMDb frontend ───
         "libremdb" => {
@@ -631,7 +639,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Twitch frontend ───
         "safetwitch" => {
@@ -640,7 +648,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Imgur frontend ───
         "rimgo" => {
@@ -649,7 +657,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Pixiv frontends ───
         "pixivFe" | "liteXiv" => {
@@ -658,7 +666,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Bandcamp frontend ───
         "tent" => {
@@ -667,7 +675,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Tumblr frontend ───
         "priviblur" => {
@@ -676,7 +684,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── GitHub frontend ───
         "gothub" => {
@@ -685,7 +693,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── StackOverflow frontend ───
         "anonymousOverflow" => {
@@ -694,7 +702,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Genius frontend ───
         "dumb" => {
@@ -703,7 +711,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Translate frontends ───
         "simplyTranslate" | "lingva" | "mozhi" | "libreTranslate" | "transLite" => {
@@ -712,7 +720,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── SoundCloud frontend ───
         "soundcloak" => {
@@ -721,7 +729,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Tenor frontend ───
         "mezzo" => {
@@ -730,7 +738,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Instagram frontends ───
         "proxigram" | "kittygram" => {
@@ -739,7 +747,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
 
         // ─── Generic fallback: preserve path and query ───
         _ => {
@@ -748,7 +756,7 @@ pub fn build_frontend_url(frontend_base: &str, original_url: &str, kind: &str) -
                 frontend_base.trim_end_matches('/'),
                 build_path_and_query(&parsed)
             )
-        }
+        },
     }
 }
 
@@ -887,9 +895,11 @@ mod tests {
         let (svc, frontends) = find_libredirect_match(&doc, "youtube.com").unwrap();
         assert!(svc == "invidious" || svc == "piped");
         assert_eq!(frontends.len(), 5);
-        assert!(frontends
-            .iter()
-            .all(|f| f.source == FrontendSource::LibRedirect));
+        assert!(
+            frontends
+                .iter()
+                .all(|f| f.source == FrontendSource::LibRedirect)
+        );
     }
 
     #[test]
@@ -1137,14 +1147,12 @@ mod tests {
         .unwrap();
         svc.inner
             .libredirect
-            .get_or_try_insert_with::<_, _, anyhow::Error>(|| async { Ok(sample_libredirect()) })
+            .get_or_try_insert_with::<_, _, AppError>(|| async { Ok(sample_libredirect()) })
             .await
             .unwrap();
         svc.inner
             .farside
-            .get_or_try_insert_with::<_, _, anyhow::Error>(|| async {
-                Ok(Vec::<FarsideService>::new())
-            })
+            .get_or_try_insert_with::<_, _, AppError>(|| async { Ok(Vec::<FarsideService>::new()) })
             .await
             .unwrap();
 
@@ -1162,7 +1170,7 @@ mod tests {
         .unwrap();
         svc.inner
             .libredirect
-            .get_or_try_insert_with::<_, _, anyhow::Error>(|| async { Ok(sample_libredirect()) })
+            .get_or_try_insert_with::<_, _, AppError>(|| async { Ok(sample_libredirect()) })
             .await
             .unwrap();
         let farside = vec![FarsideService {
@@ -1171,7 +1179,7 @@ mod tests {
         }];
         svc.inner
             .farside
-            .get_or_try_insert_with::<_, _, anyhow::Error>(|| async { Ok(farside) })
+            .get_or_try_insert_with::<_, _, AppError>(|| async { Ok(farside) })
             .await
             .unwrap();
 

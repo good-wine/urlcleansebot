@@ -3,7 +3,6 @@
 # ====================================
 /target
 **/target/
-Cargo.lock
 debug/
 *.pdb
 *.o

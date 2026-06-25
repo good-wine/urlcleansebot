@@ -1,6 +1,6 @@
 # Supported Languages
 
-ClearURLs Bot supports 15 languages out of the box. The bot auto-detects the user's language from message content and Telegram client settings, but users can also manually select their preferred language.
+URLCleanseBot supports 15 languages out of the box. The language is **auto-detected** from your Telegram client settings — no manual configuration needed.
 
 ## Language List
 
@@ -22,42 +22,14 @@ ClearURLs Bot supports 15 languages out of the box. The bot auto-detects the use
 | `nl` | Dutch | Nederlands | 🇳🇱 |
 | `pl` | Polish | Polski | 🇵🇱 |
 
-## How to Change Language
+## How Language Detection Works
 
-### Via Command
+The bot resolves the language in this order:
 
-```
-/setlang it    # Italian
-/setlang en    # English
-/setlang es    # Spanish
-/setlang fr    # French
-/setlang de    # German
-/setlang pt    # Portuguese
-/setlang ru    # Russian
-/setlang ar    # Arabic
-/setlang hi    # Hindi
-/setlang zh    # Chinese
-/setlang ja    # Japanese
-/setlang ko    # Korean
-/setlang tr    # Turkish
-/setlang nl    # Dutch
-/setlang pl    # Polish
-```
+1. **Telegram client language** — uses the language code from your Telegram app (highest priority)
+2. **Default** — English if nothing else matches
 
-### Via Settings Menu
-
-1. Send `/settings` or tap the "⚙️ Settings" button
-2. Tap "🌐 Language"
-3. Select your preferred language from the grid
-
-## Auto-Detection
-
-The bot attempts to detect the language in this order:
-
-1. **User's saved preference** — If the user has previously set a language, it's used
-2. **Message content** — Uses `whatlang` crate to detect Italian or English from text
-3. **Telegram client language** — Falls back to the language code from the Telegram client
-4. **Default** — English if nothing else matches
+Language is detected fresh on every interaction. There is no saved preference — to change the bot's language, simply change your Telegram app's language setting.
 
 ## Translation Guide
 
@@ -65,29 +37,22 @@ The bot attempts to detect the language in this order:
 
 1. Open `src/i18n.rs`
 2. Add the new field to the `Translations` struct (if needed)
-3. Add a new match arm with all 130 translation fields:
+3. Add a new match arm with all translation fields:
 
 ```rust
 "xx" => Translations {
     cleaning_feedback: "...",
     error_feedback: "...",
-    // ... all 130 fields
+    // ... all fields
 },
 ```
 
-4. Add the language label to all existing translation blocks:
-```rust
-s_language_xx: "🏳️ LanguageName",
-```
-
-5. Add the language code to `SUPPORTED_LANGUAGES` in `helpers.rs`:
+4. Add the language code to `SUPPORTED_LANGUAGES` in `helpers.rs`:
 ```rust
 pub const SUPPORTED_LANGUAGES: &[&str] = &["it", "en", ..., "xx"];
 ```
 
-6. Update `language_inline_keyboard` with the new label in the `lang_labels` array.
-7. Update the language match arms in `handlers.rs` (`/setlang`, `/language`) and `settings.rs`.
-8. Run `cargo fmt`, `cargo clippy`, and `cargo test`.
+5. Run `cargo fmt`, `cargo clippy`, and `cargo test`.
 
 ### Field Categories
 
@@ -95,11 +60,11 @@ pub const SUPPORTED_LANGUAGES: &[&str] = &["it", "en", ..., "xx"];
 |--------|----------|-------|
 | (none) | Core messages (welcome, help, stats) | 17 |
 | `d_` | Dashboard strings | 13 |
-| `s_` | Settings and UI labels | 60 |
-| `rk_` | Reply keyboard buttons | 5 |
+| `s_` | Settings and UI labels | 40 |
+| `rk_` | Reply keyboard buttons | 4 |
 | `sec_` | Security alert messages | 10 |
 | `err_` | Error messages | 5 |
 | `info_` | Info/status messages | 4 |
 | (misc) | Other (group_activated, truncated, etc.) | 16 |
 
-**Total: 130 fields per language**
+**Total: ~109 fields per language**

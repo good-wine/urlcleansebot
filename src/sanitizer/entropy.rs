@@ -16,15 +16,22 @@ pub const ENTROPY_THRESHOLD: f64 = 3.0;
 
 /// Parameter names that are always kept regardless of entropy (functional).
 pub const FUNCTIONAL_PARAMS: &[&str] = &[
-    "q", "query", "search", "id", "page", "p", "offset", "limit",
-    "sort", "order", "filter", "tag", "category", "lang", "locale",
-    "ref", "redirect", "next", "prev", "slug", "v", "t",
+    "q", "query", "search", "id", "page", "p", "offset", "limit", "sort", "order", "filter", "tag",
+    "category", "lang", "locale", "ref", "redirect", "next", "prev", "slug", "v", "t",
 ];
 
 /// Parameter names that are always removed (known trackers not in rules).
 pub const KNOWN_TRACKERS: &[&str] = &[
-    "_ga", "_gl", "_hsenc", "_hsmi", "hsCtaTracking",
-    "openstapled", "affiliate", "aff", "ref_src", "ref_url",
+    "_ga",
+    "_gl",
+    "_hsenc",
+    "_hsmi",
+    "hsCtaTracking",
+    "openstapled",
+    "affiliate",
+    "aff",
+    "ref_src",
+    "ref_url",
 ];
 
 /// Calculate Shannon entropy of a string (bits per character).
@@ -98,7 +105,9 @@ fn is_uuid_like(s: &str) -> bool {
             && parts[3].len() == 4
             && parts[4].len() == 12
         {
-            return parts.iter().all(|p| p.chars().all(|c| c.is_ascii_hexdigit()));
+            return parts
+                .iter()
+                .all(|p| p.chars().all(|c| c.is_ascii_hexdigit()));
         }
     }
     false
@@ -158,16 +167,36 @@ pub fn remove_high_entropy_params(url: &str) -> Option<String> {
     }
 
     let cleaned = clean_url.to_string();
-    if cleaned != url {
-        Some(cleaned)
-    } else {
-        None
-    }
+    if cleaned != url { Some(cleaned) } else { None }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn remove_high_entropy_does_not_break_url(domain in "[a-z]{3,10}", path in "[a-z0-9/]{0,30}") {
+            let url = format!("https://{domain}.com/{path}");
+            let result = super::remove_high_entropy_params(&url);
+            // Some URLs may be rejected (None) if malformed
+            if let Some(ref cleaned) = result {
+                prop_assert!(cleaned.contains(&format!("{domain}.com")),
+                    "Result should preserve the domain: got '{}'", cleaned);
+            }
+        }
+
+        #[test]
+        fn clean_urls_unchanged(domain in "[a-z]{3,10}\\.com", path in "(/[a-zA-Z0-9/_-]{0,20})?") {
+            let url = format!("https://{domain}{path}");
+            let result = super::remove_high_entropy_params(&url);
+            // URLs without query params should remain unchanged (Some equal to input)
+            if let Some(ref cleaned) = result {
+                prop_assert_eq!(cleaned, &url, "URLs without query params should be unchanged");
+            }
+        }
+    }
 
     #[test]
     fn test_shannon_entropy_empty() {
@@ -194,7 +223,10 @@ mod tests {
 
     #[test]
     fn test_hex_hash_detection() {
-        assert!(is_likely_tracking("sid", "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6"));
+        assert!(is_likely_tracking(
+            "sid",
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6"
+        ));
         assert!(!is_likely_tracking("id", "12345"));
     }
 
@@ -212,7 +244,8 @@ mod tests {
 
     #[test]
     fn test_find_tracking_params_in_url() {
-        let url = "https://example.com/page?q=hello&sid=a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6&ref=home";
+        let url =
+            "https://example.com/page?q=hello&sid=a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6&ref=home";
         let tracking = find_tracking_params(url);
         assert!(!tracking.is_empty());
         assert!(tracking.iter().any(|(n, _, _)| n == "sid"));

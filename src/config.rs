@@ -38,6 +38,10 @@ pub struct Config {
     pub webhook_secret: Option<String>,
     /// TCP port the embedded HTTP server binds to in webhook mode.
     pub port: u16,
+    /// Webhook HMAC secret for additional request verification.
+    /// If set, incoming webhook requests must include an
+    /// `X-Webhook-Signature` header with HMAC-SHA256 of the body.
+    pub webhook_hmac_secret: Option<String>,
 }
 
 impl Config {
@@ -85,6 +89,20 @@ impl Config {
             tracing::warn!("SERVER_ADDR non trovato, uso default.");
             format!("0.0.0.0:{}", port)
         });
+        // Ensure port matches server_addr if both are set
+        let addr_port = server_addr
+            .rsplit(':')
+            .next()
+            .and_then(|p| p.parse::<u16>().ok());
+        let effective_port = if let Some(p) = addr_port { p } else { port };
+        let server_addr = if effective_port != port && env::var("SERVER_ADDR").is_ok() {
+            tracing::warn!("SERVER_ADDR uses port {} but PORT is {}, using PORT ({})", effective_port, port, port);
+            format!("{}:{}", server_addr.rsplit(':').nth(1).unwrap_or("0.0.0.0"), port)
+        } else if effective_port != port {
+            format!("0.0.0.0:{}", port)
+        } else {
+            server_addr
+        };
 
         let admin_id = env::var("ADMIN_ID")
             .unwrap_or_else(|_| {
@@ -130,6 +148,7 @@ impl Config {
 
         let webhook_url = env::var("WEBHOOK_URL").ok().filter(|s| !s.is_empty());
         let webhook_secret = env::var("WEBHOOK_SECRET").ok().filter(|s| !s.is_empty());
+        let webhook_hmac_secret = env::var("WEBHOOK_HMAC_SECRET").ok().filter(|s| !s.is_empty());
 
         Ok(Self {
             bot_token,
@@ -147,6 +166,7 @@ impl Config {
             webhook_url,
             webhook_secret,
             port,
+            webhook_hmac_secret,
         })
     }
 
@@ -177,13 +197,13 @@ impl Config {
             .rsplit(':')
             .next()
             .and_then(|p| p.parse::<u16>().ok());
-        if let Some(p) = addr_port {
-            if RESERVED_PORTS.contains(&p) {
-                return Err(AppError::Config(format!(
-                    "FATAL: La porta {} e' riservata da Render e non puo' essere usata.",
-                    p
-                )));
-            }
+        if let Some(p) = addr_port
+            && RESERVED_PORTS.contains(&p)
+        {
+            return Err(AppError::Config(format!(
+                "FATAL: La porta {} e' riservata da Render e non puo' essere usata.",
+                p
+            )));
         }
 
         // Webhook validation

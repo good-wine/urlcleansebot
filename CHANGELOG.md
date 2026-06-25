@@ -1,107 +1,123 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to URLCleanseBot will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Internationalization
+### Removed
 
-- **Expanded to 15 languages** — Added Arabic, Hindi, Chinese, Japanese, Korean, Turkish, Dutch, Polish (alongside existing IT, EN, ES, FR, DE, PT, RU)
-- **Refactored language selector** — Inline keyboard now displays all 15 languages in a 4-column grid
-- **`/setlang` updated** — Accepts all 15 language codes with helpful error messages
-- **Settings callbacks updated** — Language validation expanded to all supported codes
-- **Fixed Polish translation block** — Corrected corrupted `pl` translations in `i18n.rs`
-- **Added `_ =>` fallback** — Defaults to English for unknown language codes
-- **Centralized language name mapping** — Extracted into `helpers::language_name()` to eliminate 90+ lines of duplication
-- **Auto-detection expanded** — `whatlang` now maps all 15 supported languages from message content
-- **New `LANGUAGES.md`** — Complete translation guide and language reference
+- **Manual language selection** — removed `/language` and `/setlang` commands, language inline keyboard, language button from settings menu and reply keyboard
+- **`language` field from `UserConfig`** — no longer persisted in database
 
-### Bug Fixes
+### Changed
 
-- **Memory leak fixed** — Removed `Box::leak()` in `handle_message()` that leaked memory on every processed message
-- **Port validation bug** — Fixed substring match (`server_addr.contains("8080")` matched `"18080"`) with proper port parsing
-- **URL_REGEX bug** — Fixed `.[^\s]*` (literal dot) to `[^\s]*` (any character) in URL validation regex
-- **PostgreSQL compatibility** — `get_domain_cleanup_stats()` now branches on database type (`SUBSTR/INSTR` for SQLite, `SPLIT_PART` for PostgreSQL)
-- **Logging inconsistency** — Replaced all `log::error!` calls in `config.rs` with `tracing::warn!`
+- **Renamed to URLCleanseBot** — package/binary renamed from `clear_urls_bot` to `url_cleanse_bot`, display name updated throughout
+- **Language is now auto-detected only** — uses Telegram client `language_code` on every interaction, never a saved preference
+- **`get_user_language()`** — ignores DB, only checks Telegram's language code
+- **`i18n.rs`** — removed 22 language-selection fields (`s_language`, `s_language_title`, `s_language_current`, `s_language_updated`, `s_language_*` flags, `rk_language`, `cmd_language_prompt`) from all 15 locales
+- **`cmd_settings_hint`** — updated in all 15 languages (no longer references `/setlang`)
+- **`help_text`** — updated in all 15 languages (removed `/language` and `/setlang` references)
+- **`CommandContext`** — added `lang_code` field for passing detected language to handlers
 
-### Code Quality
+### Added
 
-- **Consolidated sanitization** — Merged duplicate `sanitize_input()` / `sanitize_callback()` into single `sanitize_string()` helper with early-return for clean input
-- **Removed dead code** — Deleted unused `Timer` struct in `logging.rs`, unused `_user_config` in `settings.rs`
-- **Renamed local constant** — `MAX_MESSAGE_LENGTH` (handlers) → `MAX_RESPONSE_LENGTH` to avoid conflict with `shared/security.rs::MAX_MESSAGE_LENGTH` (4096)
-- **Consolidated security modules** — Merged `src/security.rs` and `src/shared/security.rs` into a single `shared/security.rs` with both sync and async rate limiters, input sanitization, and URL validation
-- **Removed dead code** — Deleted commented-out `load_translations_from_file()` in `i18n.rs`, unused `d_ignored_domains` field, and unused `domain/services/` skeleton traits
-- **Fixed config port duplication** — Single source of truth for `PORT` with unified default (8080)
-- **Fixed database initialization** — Replaced `DROP TABLE` + `CREATE TABLE` with `CREATE TABLE IF NOT EXISTS` — SQLite data now persists across restarts
-- **Fixed `increment_cleaned_count` upsert** — Changed from `UPDATE` to `INSERT ... ON CONFLICT DO UPDATE`
-- **Added missing `privacy_mode` column** — Schema now matches `UserConfig` model
+- **Lint configuration** — `[lints.rust]` with `unsafe_code = "deny"`, `[lints.clippy]` with `all = "deny"` in `Cargo.toml`
+- **`rustfmt.toml`** — Explicit formatting rules (edition 2024, Unix newlines, shorthand fields, trailing commas)
+- **`clippy.toml`** — MSRV 1.88, test allowances, project ident allowlist
+- **`Justfile`** — Modern command runner with recipes: `check`, `clippy`, `format`, `fix`, `build`, `test`, `audit`, `deny`, `pre-commit`, `setup`
+- **Pre-commit hook** — `.githooks/pre-commit` runs `check + fmt + clippy` before each commit
+- **`.github/workflows/ci.yml`** — 7 parallel jobs (fmt, check, clippy, test, audit, deny, features, msrv), `concurrency` with cancel-in-progress, `taiki-e/install-action` for fast tool install, `cargo-hack` for feature-powerset check
+- **Package metadata** — `description`, `license`, `repository`, `keywords`, `categories` in `Cargo.toml`
+- **`.github/FUNDING.yml`** — GitHub Sponsors + PayPal funding links
+- **`SUPPORT.md`** — Getting help guide
 
-### Testing
+### Changed
 
-- **Fixed integration test isolation** — Tests now use unique `sqlite:file:testdb{id}?mode=memory&cache=shared` URIs instead of shared `sqlite::memory:`
-- **Fixed sanitizer tests** — Changed from `RuleEngine::new_lazy()` to `RuleEngine::new().await` to actually load ClearURLs rules
-- **90 tests total** — 63 unit + 8 bot commands + 10 database + 9 sanitizer, all passing
-- **CI pipeline** — `.github/workflows/ci.yml` with check, clippy, test on push/PR
+- **`Cargo.lock` now committed** — removed from `.gitignore` for reproducible builds
+- **All 58 dependencies updated** via `cargo update`
+- **`CODE_OF_CONDUCT.md`** — Upgraded to Contributor Covenant v2.1 with enforcement guidelines
+- **`README.md`** — Tech stack badges, Mermaid architecture diagram, try-it link, module map, related projects, star history
+- **`CHANGELOG.md`** — Keep a Changelog format with semver links
+- **`CONTRIBUTING.md`** — Added `just` workflow, git hooks setup, conventional commits table
+- **`SECURITY.md`** — GPG-encrypted disclosure, coordinated disclosure timeline
+- **`Justfile`** — Added `help` recipe
 
-### Documentation
+### Fixed
 
-- **Updated README.md** — Current architecture, 15-language table, LANGUAGES.md link
-- **Updated ARCHITECTURE.md** — i18n section, updated test counts (90)
-- **Updated docs/ARCHITECTURE.md** — Language table, detection pipeline, test counts
-- **Updated CONTRIBUTING.md** — Test counts, language contribution guide
-- **Updated QUICK_START.md** — All 15 language codes in `/setlang`
-- **Updated docs/DEPLOYMENT.md** — Language section, security updates, Rust 1.88 MSRV
-- **Updated SECURITY.md** — Permission validation and language isolation
-- **Created LANGUAGES.md** — Complete translation guide and language reference
-
----
+- `Retry::spawn` → `Retry::start` deprecation in `src/http_utils.rs`
 
 ## [1.4.1] - 2026-03-05
 
-### Improvements
+### Added
 
-- **Enhanced Command UX** — `/language` shows current language, `/setlang` provides clear feedback
-- **Enhanced Settings UX** — Clearer status display, better user feedback, robust callback handling
-- **Automatic Alternative Frontends** — Removed manual `/redirect`, now auto-detected after URL cleaning
-- **Command Cleanup** — Removed duplicate `/topusers` (merged into `/leaderboard`)
+- **15 languages** — Arabic, Hindi, Chinese, Japanese, Korean, Turkish, Dutch, Polish
+- **Refactored language selector** — 4-column grid inline keyboard
+- **`/setlang` accepts all codes** — With helpful error messages
+- **Auto-detection expanded** — `whatlang` maps all 15 languages
+- **`LANGUAGES.md`** — Translation guide and language reference
 
-### Breaking Changes
+### Fixed
 
-- Removed `/topusers` command (use `/leaderboard`)
-- Removed `/redirect <url>` command (now automatic)
+- **Memory leak** — Removed `Box::leak()` in `handle_message()`
+- **Port validation** — Substring match (`"8080"` in `"18080"`) → proper parsing
+- **URL regex** — `.[^\s]*` (literal dot) → `[^\s]*` (any char)
+- **PostgreSQL compatibility** — `get_domain_cleanup_stats()` branches on backend
+- **Logging inconsistency** — `log::error!` → `tracing::warn!` in `config.rs`
+- **Database persistence** — `DROP TABLE` → `CREATE TABLE IF NOT EXISTS`
+- **Increment upsert** — `UPDATE` → `INSERT ... ON CONFLICT DO UPDATE`
+- **Schema mismatch** — Added missing `privacy_mode` column
+
+### Changed
+
+- **Consolidated sanitization** — `sanitize_input()` + `sanitize_callback()` → `sanitize_string()`
+- **Security modules merged** — `src/security.rs` + `src/shared/security.rs` → single `shared/security.rs`
+- **Config port deduplication** — Single `PORT` default `8080`
+- **Test isolation** — Unique `sqlite:file:testdb{id}` URIs per test
+- **Sanitizer tests** — `RuleEngine::new_lazy()` → `RuleEngine::new().await`
 
 ## [1.4.0] - 2026-03-04
 
-### New Features
+### Added
 
-- **VirusTotal Integration** — Malware detection with 70+ antivirus engines
-- **Enhanced URL Detection** — Fixed `has_urls` flag for message entities
+- VirusTotal integration (70+ antivirus engines)
+- Enhanced URL detection via message entities
 
-### Bug Fixes
+### Fixed
 
-- Fixed `has_urls` flag not being set correctly, causing URLs to be skipped
-- Added comprehensive debug logging
+- `has_urls` flag not set correctly
 
 ## [1.3.0] - 2026-02-24
 
-- Gestione errori esplicita e logging avanzato
-- Modularità estesa: funzioni di sanitizzazione e validazione in moduli dedicati
-- Test automatizzati aggiunti per validazione input/output
-- Ottimizzazione performance con cache
+- Explicit error handling and advanced logging
+- Sanitization and validation in dedicated modules
+- Automated tests for input/output validation
+- Performance optimization with cache
 
 ## [1.2.0] - 2026-01-20
 
-### Major Modernization
+### Changed
 
 - Rust 1.92+ with MSRV 1.75
-- Migration from Docker to Podman
-- Build optimization with LTO, single codegen unit
-- Fixed all deprecated teloxide method calls
+- Docker → Podman
+- LTO, single codegen unit
+- Fixed deprecated teloxide methods
 
 ## [1.1.0] - 2026-01-10
 
 - Smart language detection (English/Italian)
-- Supabase PostgreSQL compatibility
-- Multi-database support via `sqlx::Any`
-- Refactored into modular library + binary structure
-- Upgraded to teloxide 0.17, axum 0.8, sqlx 0.8
+- Supabase PostgreSQL support
+- Multi-database via `sqlx::Any`
+- Modular library + binary structure
+- teloxide 0.17, axum 0.8, sqlx 0.8
+
+---
+
+[Unreleased]: https://github.com/good-wine/urlcleansebot/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/good-wine/urlcleansebot/compare/v1.4.0...v1.4.1
+[1.4.0]: https://github.com/good-wine/urlcleansebot/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/good-wine/urlcleansebot/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/good-wine/urlcleansebot/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/good-wine/urlcleansebot/releases/tag/v1.1.0

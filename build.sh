@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build script for ClearURLs Bot with optimization options
+# Build script for URLCleanseBot with optimization options
 
 set -e
 
@@ -53,7 +53,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-echo -e "${BLUE}🚀 ClearURLs Bot Build Script${NC}"
+echo -e "${BLUE}🚀 URLCleanseBot Build Script${NC}"
 echo ""
 
 # Show build info
@@ -66,10 +66,10 @@ echo ""
 # Build command
 if [ "$BUILD_TYPE" = "debug" ]; then
   BUILD_CMD="cargo build"
-  BINARY="target/debug/clear_urls_bot"
+  BINARY="target/debug/url_cleanse_bot"
 else
   BUILD_CMD="cargo build --release"
-  BINARY="target/release/clear_urls_bot"
+  BINARY="target/release/url_cleanse_bot"
 fi
 
 # Add verbose flag

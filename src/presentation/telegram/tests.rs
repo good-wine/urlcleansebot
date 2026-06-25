@@ -5,9 +5,9 @@
 
 #[cfg(test)]
 mod command_handler_tests {
-    use crate::i18n::Translations;
     use crate::db::models::{CleanedLink, UserConfig};
-    
+    use crate::i18n::Translations;
+
     // Mock translations for testing
     fn mock_translations() -> Translations {
         crate::i18n::get_translations("en")
@@ -18,10 +18,10 @@ mod command_handler_tests {
         let tr = mock_translations();
         let response = tr.welcome.replace("{}", "123456789");
         let _ = tr;
-        
+
         // Verify response is not empty and contains expected text
         assert!(!response.is_empty());
-        assert!(response.len() < 1000);  // Sanity check - not too long
+        assert!(response.len() < 1000); // Sanity check - not too long
     }
 
     #[test]
@@ -34,7 +34,7 @@ mod command_handler_tests {
     #[test]
     fn test_stats_formatting_with_no_activity() {
         let _tr = mock_translations();
-        
+
         let config = UserConfig {
             user_id: 12345,
             enabled: 1,
@@ -42,8 +42,10 @@ mod command_handler_tests {
             mode: "reply".to_string(),
             ignored_domains: String::new(),
             cleaned_count: 0,
-            language: "en".to_string(),
             privacy_mode: 0,
+            honor_creator: 0,
+            aggressive_mode: 0,
+            dry_run: 0,
         };
 
         // Verify basic user config setup
@@ -61,15 +63,17 @@ mod command_handler_tests {
             mode: "delete".to_string(),
             ignored_domains: "example.com,test.com".to_string(),
             cleaned_count: 42,
-            language: "it".to_string(),
             privacy_mode: 1,
+            honor_creator: 0,
+            aggressive_mode: 0,
+            dry_run: 0,
         };
 
         assert_eq!(config.cleaned_count, 42);
         assert!(config.is_ai_enabled());
         let activity_level = (config.cleaned_count.min(100) / 10) as usize;
         assert_eq!(activity_level, 4);
-        
+
         let progress_bar = "█".repeat(activity_level) + &"░".repeat(10 - activity_level);
         assert_eq!(progress_bar.chars().count(), 10);
     }
@@ -91,9 +95,9 @@ mod command_handler_tests {
         } else {
             link.original_url.clone()
         };
-        
+
         assert!(original_display.len() <= 40);
-        assert_eq!(&original_display[original_display.len()-3..], "...");
+        assert_eq!(&original_display[original_display.len() - 3..], "...");
     }
 
     #[test]
@@ -112,18 +116,13 @@ mod command_handler_tests {
         } else {
             link.original_url.clone()
         };
-        
+
         assert_eq!(original_display, "https://example.com");
     }
 
     #[test]
     fn test_leaderboard_formatting_with_medals() {
-        let top_users = [
-            (111, 500),
-            (222, 400),
-            (333, 300),
-            (444, 200),
-        ];
+        let top_users = [(111, 500), (222, 400), (333, 300), (444, 200)];
 
         let mut msg = String::from("🏆 <b>Top 10 Cleaners</b>\n\n");
         for (idx, (_, count)) in top_users.iter().enumerate() {
@@ -133,19 +132,24 @@ mod command_handler_tests {
                 2 => "🥉",
                 _ => "  ",
             };
-            msg.push_str(&format!("{} #{}. <code>{}</code> URLs cleaned\n", medal, idx + 1, count));
+            msg.push_str(&format!(
+                "{} #{}. <code>{}</code> URLs cleaned\n",
+                medal,
+                idx + 1,
+                count
+            ));
         }
 
         assert!(msg.contains("🥇 #1"));
         assert!(msg.contains("🥈 #2"));
         assert!(msg.contains("🥉 #3"));
-        assert!(msg.contains("   #4"));  // No medal for 4th
+        assert!(msg.contains("   #4")); // No medal for 4th
     }
 
     #[test]
     fn test_trending_urls_truncation() {
         let trending_url = "https://example.com/very/very/long/path/with/many/segments/that/should/be/truncated/for/display/purposes";
-        
+
         let url_short = if trending_url.len() > 50 {
             format!("{}...", &trending_url[..47])
         } else {
@@ -153,17 +157,12 @@ mod command_handler_tests {
         };
 
         assert!(url_short.len() <= 50);
-        assert_eq!(&url_short[url_short.len()-3..], "...");
+        assert_eq!(&url_short[url_short.len() - 3..], "...");
     }
 
     #[test]
     fn test_whitelist_domain_validation() {
-        let valid_domains = vec![
-            "example.com",
-            "sub.example.co.uk",
-            "test-domain.io",
-            "a.b",
-        ];
+        let valid_domains = vec!["example.com", "sub.example.co.uk", "test-domain.io", "a.b"];
 
         for domain in valid_domains {
             assert!(!domain.is_empty());
@@ -177,7 +176,7 @@ mod command_handler_tests {
         let tr = mock_translations();
         let privacy_msg = "🔒 Privacy\n\nGDPP compliant\n\n📊 Data Collection\n...";
         let _ = tr;
-        
+
         // Basic structure checks
         assert!(privacy_msg.contains("🔒"));
         assert!(privacy_msg.contains("Privacy"));
@@ -209,7 +208,7 @@ mod command_handler_tests {
         });
 
         let json_str = serde_json::to_string_pretty(&json_data).unwrap();
-        
+
         assert!(json_str.contains("\"user_id\""));
         assert!(json_str.contains("\"exported_at\""));
         assert!(json_str.contains("\"links\""));
@@ -228,7 +227,7 @@ mod command_handler_tests {
         for msg in error_msgs {
             assert!(!msg.is_empty());
             assert!(msg.len() < 500);
-            assert!(msg.chars().next().unwrap().len_utf8() <= 4);  // Valid Unicode start
+            assert!(msg.chars().next().unwrap().len_utf8() <= 4); // Valid Unicode start
         }
     }
 
@@ -251,7 +250,7 @@ mod command_handler_tests {
 mod command_integration_tests {
     // These tests would require mocking the Bot and Database
     // Kept as stubs for future implementation
-    
+
     #[test]
     #[ignore = "requires bot and db mocks"]
     fn test_start_command_creates_user_config() {

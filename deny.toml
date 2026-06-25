@@ -1,0 +1,41 @@
+[advisories]
+vulnerability = "deny"
+unmaintained = "warn"
+notice = "warn"
+ignore = []
+severity-based-threshold = "low"
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Unlicense",
+    "0BSD",
+    "MPL-2.0",
+]
+confidence-threshold = 0.8
+
+[[bans]]
+deny = [
+    # OpenSSL — prefer rustls for TLS
+    { name = "openssl" },
+    { name = "openssl-sys" },
+    # Old time crate with security issues
+    { name = "time", version = "<0.3" },
+    # thread_local 1.x had UB issues
+    { name = "thread-local" },
+]
+skip = []
+skip-tree = []
+
+[sources]
+allow-git = []
+unknown-registry = "deny"
+unknown-git = "deny"

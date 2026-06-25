@@ -8,7 +8,7 @@
 //! - Decodes unnecessary percent-encoding
 
 use tracing::warn;
-use url_normalize::{normalize_url, Options, QueryFilter, RemoveQueryParameters};
+use url_normalize::{Options, QueryFilter, RemoveQueryParameters, normalize_url};
 
 /// Default normalization options.
 /// - Removes UTM tracking parameters
@@ -63,13 +63,40 @@ pub fn normalize_with_options(url: &str, options: &Options) -> String {
         Err(e) => {
             warn!(error = %e, url = %url, "URL normalization failed, using original");
             url.to_string()
-        }
+        },
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn normalize_is_idempotent(url in "https?://[a-zA-Z0-9.-]+\\.[a-z]{2,}(/[a-zA-Z0-9/.-]*)?(\\?[a-zA-Z0-9=&%-]+)?") {
+            let once = super::normalize(&url);
+            let twice = super::normalize(&once);
+            prop_assert_eq!(once, twice, "normalize() should be idempotent");
+        }
+
+        #[test]
+        fn normalize_preserves_scheme(domain in "[a-z0-9-]{3,15}\\.(com|org|net|io)", path in "[a-z0-9/_-]{0,30}") {
+            let url = format!("https://{domain}/{path}");
+            let result = super::normalize(&url);
+            prop_assert!(result.starts_with("https://") || result.starts_with("http://"),
+                "Result should start with http:// or https://: got '{}'", result);
+        }
+
+        #[test]
+        fn normalize_removes_utm(src in "[a-z]{3,10}", val in "[a-z0-9]{1,20}") {
+            let url = format!("https://example.com/page?{src}={val}&utm_source=test&foo=bar");
+            let result = super::normalize(&url);
+            prop_assert!(!result.contains("utm_source"), "utm_source should be removed: got '{}'", result);
+            prop_assert!(result.contains("foo=bar"), "non-utm params should be preserved: got '{}'", result);
+            prop_assert!(result.contains(&format!("{src}={val}")), "my param should be preserved: got '{}'", result);
+        }
+    }
 
     #[test]
     fn test_normalize_lowercase_host() {

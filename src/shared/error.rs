@@ -39,6 +39,9 @@ pub enum AppError {
 
     #[error("Internal error: {0}")]
     Internal(String),
+
+    #[error("Unexpected system time error: {0}")]
+    SystemTime(#[from] std::time::SystemTimeError),
 }
 
 pub type AppResult<T> = Result<T, AppError>;
@@ -48,7 +51,7 @@ impl From<crate::shared::security::SecurityError> for AppError {
         match error {
             crate::shared::security::SecurityError::RateLimitExceeded => {
                 AppError::RateLimitExceeded
-            }
+            },
             _ => AppError::Security(error.to_string()),
         }
     }

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/good-wine/urlcleansebot/discussions
+    about: Ask questions and discuss features
+  - name: Telegram Support
+    url: https://t.me/clearurls_bot
+    about: Get help via the bot itself

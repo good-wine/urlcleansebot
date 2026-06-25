@@ -4,14 +4,47 @@
 //! - Input validation and sanitization
 //! - Rate limiting (sync and async variants)
 //! - Content security checks
+//! - HMAC webhook verification
+//! - DNS pinning against SSRF
 
 use moka::future::Cache;
-use moka::sync::Cache as SyncCache;
 use regex::Regex;
-use std::sync::LazyLock;
 use sha2::{Digest, Sha256};
+use std::net::{IpAddr, ToSocketAddrs};
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::time::Duration;
+
+const HMAC_BLOCK_SIZE: usize = 64;
+
+/// Compute HMAC-SHA256 manually (avoids digest version conflicts).
+fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
+    let mut k = key.to_vec();
+    if k.len() > HMAC_BLOCK_SIZE {
+        let mut hasher = Sha256::new();
+        hasher.update(&k);
+        k = hasher.finalize().to_vec();
+    }
+    k.resize(HMAC_BLOCK_SIZE, 0);
+
+    let mut ipad = vec![0x36u8; HMAC_BLOCK_SIZE];
+    let mut opad = vec![0x5cu8; HMAC_BLOCK_SIZE];
+    for i in 0..k.len() {
+        ipad[i] ^= k[i];
+        opad[i] ^= k[i];
+    }
+
+    let mut inner = Sha256::new();
+    inner.update(&ipad);
+    inner.update(data);
+    let inner_hash = inner.finalize();
+
+    let mut outer = Sha256::new();
+    outer.update(&opad);
+    outer.update(inner_hash);
+    let result = outer.finalize();
+    result.into()
+}
 
 /// Maximum URL length to prevent DoS attacks
 pub const MAX_URL_LENGTH: usize = 2048;
@@ -48,36 +81,6 @@ pub async fn check_rate_limit(user_id: i64) -> Result<(), SecurityError> {
     RATE_LIMITER_CACHE.insert(user_id, Arc::new(count)).await;
     Ok(())
 }
-
-// ── Sync rate limiter (for message handlers) ──────────────────────────────
-
-pub struct RateLimiter {
-    cache: SyncCache<i64, Arc<()>>,
-}
-
-impl RateLimiter {
-    pub fn new(min_interval: Duration) -> Self {
-        let ttl = min_interval * 3;
-        Self {
-            cache: SyncCache::builder()
-                .max_capacity(100_000)
-                .time_to_live(ttl)
-                .build(),
-        }
-    }
-
-    pub fn check(&self, user_id: i64) -> bool {
-        match self.cache.get(&user_id) {
-            Some(_) => false,
-            None => {
-                self.cache.insert(user_id, Arc::new(()));
-                true
-            }
-        }
-    }
-}
-
-pub static RATE_LIMITER: LazyLock<RateLimiter> = LazyLock::new(|| RateLimiter::new(Duration::from_secs(1)));
 
 // ── Input sanitization ─────────────────────────────────────────────────────
 
@@ -122,11 +125,9 @@ pub fn sanitize_telegram_text(text: &str) -> String {
 
 // ── Validation ─────────────────────────────────────────────────────────────
 static URL_REGEX: LazyLock<Regex> =
-
     LazyLock::new(|| Regex::new(r"^https?://[^\s/$.?#]+\.[^\s]*$").unwrap());
 
 static MALICIOUS_PATTERNS: LazyLock<Regex> =
-
     LazyLock::new(|| Regex::new(r"(?i)(javascript:|data:|vbscript:|file:|ftp:|mailto:)").unwrap());
 pub fn validate_url(url: &str) -> Result<String, SecurityError> {
     if url.len() > MAX_URL_LENGTH {
@@ -152,7 +153,7 @@ pub fn validate_url(url: &str) -> Result<String, SecurityError> {
                 return Err(SecurityError::MaliciousContent);
             }
             Ok(decoded.to_string())
-        }
+        },
         Err(_) => Err(SecurityError::InvalidUrl),
     }
 }
@@ -212,6 +213,110 @@ pub fn is_safe_url_scheme(url: &str) -> bool {
     lower.starts_with("http://") || lower.starts_with("https://")
 }
 
+// ── HMAC webhook verification ──────────────────────────────────────────────
+
+/// Verify an HMAC-SHA256 signature for webhook request body.
+///
+/// Returns `true` if the signature matches.
+/// The expected signature is hex-encoded HMAC-SHA256 of the body.
+pub fn verify_hmac_signature(body: &[u8], signature: &str, secret: &[u8]) -> bool {
+    let expected = hmac_sha256(secret, body);
+    let expected_hex: String = expected.iter().map(|b| format!("{:02x}", b)).collect();
+    // Constant-time comparison using XOR
+    if expected_hex.len() != signature.len() {
+        return false;
+    }
+    let mut result = 0u8;
+    for (a, b) in expected_hex.bytes().zip(signature.bytes()) {
+        result |= a ^ b;
+    }
+    result == 0
+}
+
+/// Extract the HMAC signature from a `X-Webhook-Signature` header value.
+/// Format: `sha256=<hex_signature>` or just the hex string.
+pub fn extract_hmac_signature(header: &str) -> Option<&str> {
+    if let Some(stripped) = header.strip_prefix("sha256=") {
+        Some(stripped.trim())
+    } else {
+        Some(header.trim())
+    }
+}
+
+// ── DNS pinning ────────────────────────────────────────────────────────────
+
+/// DNS pinning cache: maps hostname -> resolved IP addresses.
+/// Prevents DNS rebinding attacks.
+static DNS_PINNING_CACHE: LazyLock<moka::sync::Cache<String, Vec<IpAddr>>> =
+    LazyLock::new(|| {
+        moka::sync::Cache::builder()
+            .max_capacity(10_000)
+            .time_to_live(Duration::from_secs(300)) // 5 min TTL
+            .build()
+    });
+
+/// Resolve a hostname to IP addresses, using DNS pinning cache.
+/// Returns cached result if available, otherwise resolves and caches.
+pub fn resolve_hostname(host: &str) -> Vec<IpAddr> {
+    if let Some(cached) = DNS_PINNING_CACHE.get(host) {
+        return cached;
+    }
+
+    let addr = format!("{host}:443");
+    let ips: Vec<IpAddr> = match addr.to_socket_addrs() {
+        Ok(iter) => iter.map(|sa| sa.ip()).collect(),
+        Err(_) => return vec![],
+    };
+
+    DNS_PINNING_CACHE.insert(host.to_string(), ips.clone());
+    ips
+}
+
+/// Check if a hostname resolves to a private/reserved IP.
+/// Uses DNS pinning cache to prevent rebinding attacks.
+pub fn is_private_host(host: &str) -> bool {
+    let ips = resolve_hostname(host);
+    if ips.is_empty() {
+        return true; // Treat unresolvable hosts as private (fail closed)
+    }
+    ips.iter().any(is_private_ip)
+}
+
+/// Check if an IP address is private, reserved, or link-local.
+pub fn is_private_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(addr) => {
+            addr.is_private()
+                || addr.is_loopback()
+                || addr.is_link_local()
+                || addr.is_broadcast()
+                || addr.is_unspecified()
+                || addr.octets()[0] == 100 && (addr.octets()[1] & 0b1100_0000 == 0b0100_0000)
+                || addr.octets()[0] == 10
+                || addr.octets()[0] == 172 && (addr.octets()[1] & 0b1111_0000 == 0b0001_0000)
+                || addr.octets()[0] == 192 && addr.octets()[1] == 168
+        },
+        IpAddr::V6(addr) => {
+            addr.is_loopback()
+                || addr.is_unspecified()
+                || addr.segments()[0] == 0xfc00
+                || addr.segments()[0] == 0xfe80
+        },
+    }
+}
+
+/// Validate that connecting to a host is safe (not SSRF).
+/// Checks DNS pinning cache, private IPs, and blocked ranges.
+pub fn validate_external_host(host: &str) -> Result<(), SecurityError> {
+    if host.is_empty() || host.len() > 253 {
+        return Err(SecurityError::InvalidDomain);
+    }
+    if is_private_host(host) {
+        return Err(SecurityError::MaliciousContent);
+    }
+    Ok(())
+}
+
 // ── Error types ────────────────────────────────────────────────────────────
 
 #[derive(Debug, thiserror::Error)]
@@ -261,6 +366,58 @@ mod tests {
             validate_url(&"a".repeat(3000)),
             Err(SecurityError::UrlTooLong)
         ));
+    }
+
+    #[test]
+    fn test_hmac_verification() {
+        let body = b"{\"test\": true}";
+        let secret = b"my-secret-key";
+        let sig_hex: String = hmac_sha256(secret, body)
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        assert!(verify_hmac_signature(body, &sig_hex, secret));
+        assert!(!verify_hmac_signature(body, "invalid", secret));
+    }
+
+    #[test]
+    fn test_hmac_known_vector() {
+        // RFC 4231 Test Case 2
+        let key = b"Jefe";
+        let data = b"what do ya want for nothing?";
+        let expected = "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843";
+        let result: String = hmac_sha256(key, data)
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_extract_hmac_signature() {
+        assert_eq!(extract_hmac_signature("sha256=abc123"), Some("abc123"));
+        assert_eq!(extract_hmac_signature("abc123"), Some("abc123"));
+    }
+
+    #[test]
+    fn test_private_ip_detection() {
+        use std::net::IpAddr;
+        let loopback: IpAddr = "127.0.0.1".parse().unwrap();
+        let private: IpAddr = "10.0.0.1".parse().unwrap();
+        let public: IpAddr = "8.8.8.8".parse().unwrap();
+        let local_v6: IpAddr = "::1".parse().unwrap();
+
+        assert!(is_private_ip(&loopback));
+        assert!(is_private_ip(&private));
+        assert!(!is_private_ip(&public));
+        assert!(is_private_ip(&local_v6));
+    }
+
+    #[test]
+    fn test_validate_external_host() {
+        assert!(validate_external_host("example.com").is_ok());
+        assert!(validate_external_host("google.com").is_ok());
+        assert!(validate_external_host("").is_err());
     }
 
     #[test]

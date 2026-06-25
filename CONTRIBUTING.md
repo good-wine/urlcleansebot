@@ -1,153 +1,106 @@
-# Contributing to ClearURLs Bot
+# Contributing to URLCleanseBot
 
-Thank you for your interest in contributing! We welcome all contributions that help make this project more robust, feature-rich, and secure.
+Thank you for your interest in contributing!
 
 ## Quick Start
 
 ### Prerequisites
 
-- **Rust 1.88+** (set as `rust-version` in `Cargo.toml`)
+- **Rust 1.88+** (edition 2024)
 - **Git** for version control
-- **Podman** (optional, for containerized development)
+- **just** (optional, recommended) — `cargo install just`
 
-### Initial Setup
+### Setup
 
 ```bash
-git clone https://github.com/good-wine/clearurlsbot.git
-cd clearurlsbot
+git clone https://github.com/good-wine/urlcleansebot.git
+cd urlcleansebot
 
 cp .env.example .env
 # Edit .env with your development configuration
 
+# Option A: with just (recommended)
+just setup
+
+# Option B: manual
 rustup component add rustfmt clippy
+git config core.hooksPath .githooks
 ```
+
+The pre-commit hook (`just pre-commit`) runs `cargo check`, `cargo fmt --check`, and
+`cargo clippy` automatically before each commit.
 
 ## Development Workflows
 
-### Local Development
+### With just
 
 ```bash
-cargo build            # debug build
-cargo run              # run with auto-reload via cargo-watch
-cargo test             # run all tests
-cargo fmt --check      # check formatting
+just check        # fast compilation check
+just fix          # auto-fix clippy + format
+just test         # run all tests
+just ci           # full CI pipeline
+just build        # release build
+just pre-commit   # run pre-commit checks
+```
+
+### Manual
+
+```bash
+cargo build                           # debug build
+cargo check --locked --all-targets    # compilation check
+cargo fmt --all && cargo fmt --check  # format + verify
 cargo clippy --all-targets -- -D warnings  # lint
+cargo test                            # all tests
 ```
 
-### Container Development
+## Conventional Commits
 
-```bash
-./podman-deploy.sh build
-./podman-deploy.sh run
-./podman-deploy.sh logs
-./podman-deploy.sh stop
-```
+This project follows [Conventional Commits](https://www.conventionalcommits.org/):
 
-### Database Development
-
-```bash
-# SQLite (default)
-cargo run
-
-# PostgreSQL
-export DATABASE_URL=postgresql://user:pass@localhost/clearurls_dev
-cargo run
-```
+| Prefix | Usage |
+|--------|-------|
+| `feat:` | New feature |
+| `fix:` | Bug fix |
+| `refactor:` | Code change that neither fixes a bug nor adds a feature |
+| `docs:` | Documentation only |
+| `test:` | Adding/improving tests |
+| `chore:` | Build, CI, tooling |
+| `perf:` | Performance improvement |
+| `ci:` | CI configuration |
+| `style:` | Formatting, missing semicolons, etc. |
 
 ## Testing
-
-### Pre-commit Checklist
-
-```bash
-cargo fmt
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo check --all-targets
-```
-
-### Test Structure
-
-The project has **90 tests** across 5 categories:
-
-| Suite | Count | Description |
-|-------|-------|-------------|
-| Unit tests (`cargo test --lib`) | 63 | Sanitizer, redirects, security, helpers, health |
-| Bot commands (`cargo test --test bot_commands_tests`) | 8 | Integration tests with in-memory SQLite |
-| Database (`cargo test --test database_tests`) | 10 | User configs, history, whitelist, feature flags |
-| Sanitizer (`cargo test --test sanitizer_tests`) | 9 | Real ClearURLs rules fetching and URL cleaning |
-| Security (`cargo test --test security_tests`) | 0 | See unit tests in `shared/security.rs` |
-
-### Running Tests
 
 ```bash
 # All tests
 cargo test
 
-# Unit tests only
-cargo test --lib
+# Specific suites
+cargo test --lib                          # unit tests
+cargo test --test bot_commands_tests      # command integration
+cargo test --test database_tests          # database
+cargo test --test sanitizer_tests         # sanitizer (needs network)
 
-# Integration tests
-cargo test --test '*'
-
-# Specific test suite
-cargo test sanitizer_tests
-cargo test database_tests
-cargo test bot_commands_tests
-
-# Verbose output
-cargo test -- --show-output --nocapture
+# Property-based tests (proptest)
+cargo test normalize_is_idempotent        # single proptest
 ```
 
-### Test Infrastructure
+### Test Structure
 
-- Each integration test gets its own **isolated in-memory SQLite database** using `sqlite:file:testdb{id}?mode=memory&cache=shared`
-- The `tests/common/mod.rs` module provides shared fixtures (`setup_test_db()`, `test_config()`, sample URLs)
-- Sanitizer tests fetch real ClearURLs rules from the internet — they require network access
-
-### Writing Tests
-
-```rust
-// Unit test (inline in source file)
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_something() {
-        assert_eq!(my_function(), expected);
-    }
-}
-
-// Integration test (in tests/ directory)
-mod common;
-use common::setup_test_db;
-
-#[tokio::test]
-async fn test_db_operation() {
-    let db = setup_test_db().await;
-    // ... test code
-}
-```
-
-## Code Quality Standards
-
-- **Clippy**: All warnings must be addressed or explicitly allowed in `clippy.toml`
-- **Formatting**: `cargo fmt --all` — enforced in CI
-- **Error Handling**: Use `Result` types, avoid `unwrap()` in production code
-- **Logging**: Use `tracing` with appropriate levels (`info!`, `debug!`, `warn!`, `error!`)
+- **Unit tests** — inline in each source module (`#[cfg(test)]`)
+- **Property-based tests** — `proptest` invariants for URL normalization
+- **Integration tests** — `tests/` directory, isolated in-memory SQLite databases
 
 ## Project Structure
 
 ```
 src/
-├── presentation/telegram/  # Bot handlers, UI, settings, security scans
+├── presentation/telegram/  # Bot handlers, commands, UI
 ├── sanitizer/              # URL cleaning engine
 ├── redirects/              # Alternative frontend detection
 ├── db/                     # Database layer
 ├── shared/                 # Error types, security utils
-├── application/            # Clean Architecture skeleton
-├── domain/                 # Entities and repository interfaces
-├── infrastructure/         # Repository implementations
+├── metrics.rs              # Prometheus counters
 ├── config.rs               # Configuration
 ├── main.rs                 # Orchestrator (~50 lines)
 └── lib.rs                  # Module declarations
@@ -155,73 +108,53 @@ src/
 
 ### Adding New Features
 
-1. **New commands/handlers** — Add to `presentation/telegram/handlers.rs`
+1. **Commands** — Add to `presentation/telegram/commands.rs`, register in `handlers.rs`
 2. **UI helpers** — Add to `presentation/telegram/helpers.rs` (with tests)
-3. **Sanitization rules** — Add to `sanitizer/rule_engine.rs`
-4. **Database operations** — Add to `db/implementation.rs` and update `db/models.rs` if needed
-5. **New languages** — Add translations in `i18n.rs` (see [LANGUAGES.md](LANGUAGES.md))
-6. **Configuration** — Add to `config.rs` with validation and update `.env.example`
+3. **Sanitization rules** — `sanitizer/rule_engine.rs` or `sanitizer/multi_source.rs`
+4. **Database ops** — `db/implementation.rs`, update `db/models.rs`
+5. **Languages** — Add translations in `i18n.rs` + language code to `SUPPORTED_LANGUAGES` in `helpers.rs` (see [LANGUAGES.md](LANGUAGES.md))
+6. **Configuration** — `config.rs` + `.env.example`
+7. **Metrics** — Atomic counter in `metrics.rs` + `render_prometheus()`
+
+## Code Quality Standards
+
+| Requirement | Check |
+|-------------|-------|
+| **Clippy** | `cargo clippy --all-targets -- -D warnings` |
+| **Formatting** | `cargo fmt --all -- --check` |
+| **Compilation** | `cargo check --locked --all-targets` |
+| **Tests** | `cargo test` — all pass |
+| **Errors** | `AppResult<T>`, no `unwrap()` in production, no `anyhow` |
+| **Logging** | `tracing` with levels: `info!`, `debug!`, `warn!`, `error!` |
 
 ## Pull Request Process
 
-1. **Create branch** — descriptive name: `feat/url-sanitization`, `fix/db-connection`
-2. **Commit frequently** — descriptive messages following [conventional commits](https://www.conventionalcommits.org/)
-3. **Run quality checks** — `cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test`
-4. **Create PR** — fill out description, link issues, describe testing
+1. **Branch** — descriptive name: `feat/`, `fix/`, `refactor/`, `docs/`, etc.
+2. **Commit** — conventional commit messages
+3. **Quality** — `cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test`
+4. **PR** — fill the template, link issues, describe testing
 
-### PR Requirements
+### PR Checklist
 
-- Clear title using conventional commit format (`feat:`, `fix:`, `docs:`, `refactor:`, etc.)
-- Description explaining what, why, and how
-- All CI checks pass
-- Documentation updated if applicable
+- [ ] `cargo fmt --all` — no formatting issues
+- [ ] `cargo clippy --all-targets -- -D warnings` — no warnings
+- [ ] `cargo test` — all tests pass
+- [ ] Documentation updated (if applicable)
+- [ ] `.env.example` updated (if config changed)
 
-## Debugging & Troubleshooting
-
-### Common Issues
-
-```bash
-# Clean rebuild
-cargo clean && cargo build
-
-# Update dependencies
-cargo update
-
-# Reset database
-rm bot.db && cargo run
-
-# Rebuild container
-podman rmi clear_urls_bot
-./podman-deploy.sh build
-```
-
-### Logging Configuration
+## Debugging
 
 ```bash
-# Debug logging
 RUST_LOG=debug cargo run
-
-# Specific module logging
-RUST_LOG=clear_urls_bot::sanitizer=trace,clear_urls_bot::presentation::telegram=debug cargo run
+RUST_LOG=url_cleanse_bot::sanitizer=trace,url_cleanse_bot::presentation::telegram=debug cargo run
 ```
 
 ## Issue Reporting
 
 ### Bug Reports
 
-Include:
-- **Environment**: Rust version, OS, database type
-- **Steps to Reproduce**: Clear, minimal reproduction steps
-- **Expected vs Actual Behavior**
-- **Logs**: Relevant output with `RUST_LOG=debug`
+Include: Rust version, OS, database type, steps to reproduce, logs with `RUST_LOG=debug`.
 
 ### Feature Requests
 
-Provide:
-- **Use Case**: Why this feature is needed
-- **Proposed Solution**: How you envision it working
-- **Alternatives Considered**
-
----
-
-Thank you for contributing to ClearURLs Bot!
+Include: use case, proposed solution, alternatives considered.

@@ -1,0 +1,15 @@
+URLCleanseBot — MIT License
+================================
+
+The URLCleanseBot source code is licensed under the MIT License (see LICENSE).
+
+Third-Party Data
+----------------
+
+This project uses tracking-parameter rules from the ClearURLs project
+(https://clearurls.xyz/), which are licensed under the GNU Affero General
+Public License v3.0 (AGPL-3.0). The ClearURLs rules are loaded at runtime
+from external sources and are not statically linked into the bot binary.
+
+The MIT license applies only to the bot's own source code, not to the
+externally-loaded rules data.

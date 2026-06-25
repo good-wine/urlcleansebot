@@ -1,8 +1,8 @@
 use crate::config::Config;
 use crate::http_utils::retry_http_request;
-use anyhow::{anyhow, Result};
+use crate::shared::error::{AppError, AppResult};
 use reqwest::Client;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::Duration;
 use tracing::{debug, warn};
 
@@ -42,7 +42,7 @@ impl AiEngine {
     ///
     /// # Errors
     /// Returns an error if the AI API request fails.
-    pub async fn sanitize(&self, url: &str) -> Result<Option<String>> {
+    pub async fn sanitize(&self, url: &str) -> AppResult<Option<String>> {
         let api_key = match &self.api_key {
             Some(key) => key,
             None => return Ok(None),
@@ -71,7 +71,7 @@ impl AiEngine {
 
         if !response.status().is_success() {
             let err = response.text().await?;
-            return Err(anyhow!("Errore API AI: {}", err));
+            return Err(AppError::Internal(format!("Errore API AI: {}", err)));
         }
 
         let data: Value = response.json().await?;
@@ -79,11 +79,11 @@ impl AiEngine {
             .as_str()
             .map(|s| s.trim().to_string());
 
-        if let Some(cleaned_url) = cleaned {
-            if cleaned_url != url {
-                debug!("AI ha pulito URL: {} -> {}", url, cleaned_url);
-                return Ok(Some(cleaned_url));
-            }
+        if let Some(cleaned_url) = cleaned
+            && cleaned_url != url
+        {
+            debug!("AI ha pulito URL: {} -> {}", url, cleaned_url);
+            return Ok(Some(cleaned_url));
         }
 
         Ok(None)

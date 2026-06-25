@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# ClearURLs Bot - Setup & Validation Script
+# URLCleanseBot - Setup & Validation Script
 # 
 # This script helps you configure the bot by:
 # - Checking required dependencies
@@ -78,14 +78,13 @@ check_rust() {
         RUST_VERSION=$(rustc --version | awk '{print $2}')
         print_success "Rust installed: $RUST_VERSION"
         
-        # Check version is >= 1.75
         RUST_MAJOR=$(echo $RUST_VERSION | cut -d. -f1)
         RUST_MINOR=$(echo $RUST_VERSION | cut -d. -f2)
         
-        if [ "$RUST_MAJOR" -ge 1 ] && [ "$RUST_MINOR" -ge 75 ]; then
-            print_success "Rust version is compatible (>= 1.75)"
+        if [ "$RUST_MAJOR" -ge 1 ] && [ "$RUST_MINOR" -ge 88 ]; then
+            print_success "Rust version is compatible (>= 1.88)"
         else
-            print_warning "Rust version < 1.75 detected. Update recommended: rustup update"
+            print_warning "Rust version < 1.88 detected. Update recommended: rustup update"
         fi
     else
         print_error "Rust not installed"
@@ -268,8 +267,6 @@ print_summary() {
     print_info "Documentation:"
     echo "  - Architecture:          ${YELLOW}docs/ARCHITECTURE.md${NC}"
     echo "  - Deployment:            ${YELLOW}docs/DEPLOYMENT.md${NC}"
-    echo "  - VirusTotal setup:      ${YELLOW}docs/VIRUSTOTAL.md${NC}"
-    echo "  - URLScan.io setup:      ${YELLOW}docs/URLSCAN.md${NC}"
     echo ""
 }
 
@@ -277,7 +274,7 @@ print_summary() {
 main() {
     echo -e "\n${BLUE}╔═══════════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║                                               ║${NC}"
-    echo -e "${BLUE}║       ClearURLs Bot - Setup Validator         ║${NC}"
+    echo -e "${BLUE}║       URLCleanseBot - Setup Validator         ║${NC}"
     echo -e "${BLUE}║                                               ║${NC}"
     echo -e "${BLUE}╚═══════════════════════════════════════════════╝${NC}"
     

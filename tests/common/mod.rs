@@ -2,8 +2,8 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use clear_urls_bot::config::Config;
-use clear_urls_bot::db::Db;
+use url_cleanse_bot::config::Config;
+use url_cleanse_bot::db::Db;
 
 static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -42,6 +42,7 @@ pub fn test_config() -> Config {
         ai_api_base: "https://api.openai.com/v1".to_string(),
         ai_model: "gpt-4".to_string(),
         inline_max_results: 5,
+        webhook_hmac_secret: None,
     }
 }
 

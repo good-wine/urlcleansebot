@@ -1,0 +1,60 @@
+# ──────────────────────────────────────────────────────────────
+# Dependency freshness check (cargo-outdated)
+# Runs weekly to detect outdated dependencies
+# Creates an issue when outdated crates are found
+# ──────────────────────────────────────────────────────────────
+name: Outdated
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  outdated:
+    name: Check outdated dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: "1.88"
+
+      - uses: taiki-e/install-action@ace6ebe54a6a0c86dfb5f7764b17f793b6925bc3 # v2
+        with:
+          tool: cargo-outdated
+
+      - id: outdated
+        continue-on-error: true
+        run: |
+          cargo outdated --exit-code 1 2>&1 | tee outdated_output.txt
+
+      - name: Create issue if outdated
+        if: steps.outdated.outcome == 'failure'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('outdated_output.txt', 'utf8');
+            const title = '📦 Outdated dependencies found';
+            const body = `
+            The following dependencies are outdated:
+
+            \`\`\`
+            ${output}
+            \`\`\`
+
+            Run \`cargo update\` to update dependencies.
+            `;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['dependencies', 'rust']
+            });

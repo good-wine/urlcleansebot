@@ -1,0 +1,24 @@
+# ──────────────────────────────────────────────────────────────
+# Typos check
+# Scans all files for common spelling mistakes using crate-ci/typos
+# ──────────────────────────────────────────────────────────────
+name: Typos
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  typos:
+    name: Check spelling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+
+      - name: Check spelling
+        uses: crate-ci/typos@37bb98842b0d8c4ffebdb75301a13db0267cef89 # master

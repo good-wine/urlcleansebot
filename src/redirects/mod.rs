@@ -20,8 +20,8 @@ mod service;
 
 pub use models::{Frontend, FrontendSource, LookupHit};
 pub use service::{
-    build_frontend_url, extract_host, format_hit_html, RedirectService, FARSIDE_URL,
-    LIBREDIRECT_URL,
+    FARSIDE_URL, LIBREDIRECT_URL, RedirectService, build_frontend_url, extract_host,
+    format_hit_html,
 };
 
 #[cfg(test)]

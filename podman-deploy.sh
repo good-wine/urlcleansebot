@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# ClearURLs Bot - Podman Deployment Script
+# URLCleanseBot - Podman Deployment Script
 # This script replaces Docker commands with Podman equivalents
 
 set -e
@@ -40,51 +40,51 @@ fi
 
 # Function to build the container
 build_container() {
-    print_status "Building ClearURLs Bot container..."
-    podman build -t clear_urls_bot -f Containerfile .
+    print_status "Building URLCleanseBot container..."
+    podman build -t url_cleanse_bot -f Containerfile .
     print_status "Container built successfully!"
 }
 
 # Function to run the container
 run_container() {
-    print_status "Starting ClearURLs Bot container..."
+    print_status "Starting URLCleanseBot container..."
     
     # Create pod for networking
-    podman pod create --name clear_urls_bot_pod -p 3000:3000 2>/dev/null || true
+    podman pod create --name url_cleanse_bot_pod -p 3000:3000 2>/dev/null || true
     
     # Run the container
     podman run -d \
-        --name clear_urls_bot \
-        --pod clear_urls_bot_pod \
+        --name url_cleanse_bot \
+        --pod url_cleanse_bot_pod \
         --env-file .env \
         -e APP_ENV=production \
-        -e RUST_LOG=clear_urls_bot=info \
+        -e RUST_LOG=url_cleanse_bot=info \
         -v ./bot.db:/app/bot.db:Z \
         --memory=512m \
         --cpus=0.5 \
         --restart=unless-stopped \
-        clear_urls_bot
+        url_cleanse_bot
     
     print_status "Container started successfully!"
 }
 
 # Function to stop the container
 stop_container() {
-    print_status "Stopping ClearURLs Bot container..."
-    podman stop clear_urls_bot 2>/dev/null || true
-    podman rm clear_urls_bot 2>/dev/null || true
-    podman pod rm clear_urls_bot_pod 2>/dev/null || true
+    print_status "Stopping URLCleanseBot container..."
+    podman stop url_cleanse_bot 2>/dev/null || true
+    podman rm url_cleanse_bot 2>/dev/null || true
+    podman pod rm url_cleanse_bot_pod 2>/dev/null || true
     print_status "Container stopped and removed!"
 }
 
 # Function to view logs
 view_logs() {
-    podman logs -f clear_urls_bot
+    podman logs -f url_cleanse_bot
 }
 
 # Function to show status
 show_status() {
-    podman ps -a --filter name=clear_urls_bot
+    podman ps -a --filter name=url_cleanse_bot
 }
 
 # Main script logic
@@ -118,13 +118,13 @@ case "${1:-build}" in
             podman-compose -f podman-compose.yml "${2:-up}"
         else
             print_warning "podman-compose not available. Generate Kubernetes manifest..."
-            podman kube generate clear_urls_bot > clear_urls_bot.yaml
-            print_status "Kubernetes manifest generated: clear_urls_bot.yaml"
-            print_status "Use 'podman play kube clear_urls_bot.yaml' to deploy"
+            podman kube generate url_cleanse_bot > url_cleanse_bot.yaml
+            print_status "Kubernetes manifest generated: url_cleanse_bot.yaml"
+            print_status "Use 'podman play kube url_cleanse_bot.yaml' to deploy"
         fi
         ;;
     "help"|"-h"|"--help")
-        echo "ClearURLs Bot - Podman Deployment Script"
+        echo "URLCleanseBot - Podman Deployment Script"
         echo ""
         echo "Usage: $0 [command]"
         echo ""

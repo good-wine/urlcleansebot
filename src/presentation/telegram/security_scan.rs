@@ -10,17 +10,61 @@
 //! - `URLSCAN_API_KEY` - API key for URLScan.io service
 //! - `VIRUSTOTAL_ALERT_ONLY` - If set, only return alerts for threats (default: true)
 //! - `URLSCAN_ALERT_ONLY` - If set, only return alerts for threats (default: true)
-use base64::prelude::*;
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
-use regex::Regex;
-use reqwest;
-use serde_json;
+
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use base64::prelude::*;
+use futures;
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+use regex::Regex;
+use serde_json;
 use tokio;
 use tracing;
 use urlencoding;
 
 use crate::http_utils::retry_http_request;
+
+/// Shared configuration for a security scanner service.
+#[derive(Clone, Debug)]
+pub struct ScannerConfig {
+    pub api_key: Option<String>,
+    pub alert_only: bool,
+    pub timeout_secs: u64,
+    pub name: &'static str,
+}
+
+impl ScannerConfig {
+    pub fn from_env(api_key_var: &str, alert_only_var: &str, name: &'static str) -> Self {
+        let api_key = std::env::var(api_key_var)
+            .ok()
+            .filter(|k| !k.is_empty() && k != &format!("your_{api_key_var}_here"));
+        let alert_only = std::env::var(alert_only_var)
+            .ok()
+            .map(|value| {
+                let normalized = value.trim().to_ascii_lowercase();
+                !matches!(normalized.as_str(), "0" | "false" | "no" | "off")
+            })
+            .unwrap_or(true);
+        Self {
+            api_key,
+            alert_only,
+            timeout_secs: 10,
+            name,
+        }
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.api_key.is_some()
+    }
+}
+
+#[allow(dead_code)]
+fn build_reqwest_client(timeout_secs: u64) -> Option<reqwest::Client> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_secs))
+        .build()
+        .ok()
+}
 
 /// Check URL with both VirusTotal and URLScan services and consolidate results
 ///
@@ -115,7 +159,7 @@ pub async fn check_url_virustotal(url: &str) -> Option<String> {
         _ => {
             tracing::debug!("VirusTotal: API key non configurata, scansione disabilitata");
             return None;
-        }
+        },
     };
 
     tracing::info!(url = %url, "VirusTotal: Scansione in corso...");
@@ -145,7 +189,7 @@ pub async fn check_url_virustotal(url: &str) -> Option<String> {
             return Some(
                 "⚠️ <b>VirusTotal</b>\nImpossibile raggiungere il servizio. Riprova tra qualche minuto.".to_string(),
             );
-        }
+        },
     };
 
     // Check if URL already exists in VirusTotal database
@@ -175,7 +219,7 @@ pub async fn check_url_virustotal(url: &str) -> Option<String> {
                     "⚠️ <b>VirusTotal: invio analisi fallito</b>\nRiprova tra qualche minuto."
                         .to_string(),
                 );
-            }
+            },
         };
 
         if submit_resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
@@ -197,10 +241,10 @@ pub async fn check_url_virustotal(url: &str) -> Option<String> {
             ));
         }
 
-        if let Ok(submit_json) = submit_resp.json::<serde_json::Value>().await {
-            if let Some(id) = submit_json["data"]["id"].as_str() {
-                lookup_id = id.to_string();
-            }
+        if let Ok(submit_json) = submit_resp.json::<serde_json::Value>().await
+            && let Some(id) = submit_json["data"]["id"].as_str()
+        {
+            lookup_id = id.to_string();
         }
 
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
@@ -218,7 +262,7 @@ pub async fn check_url_virustotal(url: &str) -> Option<String> {
                     return None;
                 }
                 return Some("ℹ️ <b>VirusTotal</b>\nURL inviato per analisi. Report non ancora disponibile, riprova tra poco.".to_string());
-            }
+            },
         };
     }
 
@@ -259,7 +303,7 @@ pub async fn check_url_virustotal(url: &str) -> Option<String> {
             return Some(
                 "⚠️ <b>VirusTotal</b>\nImpossibile leggere la risposta dell'analisi.".to_string(),
             );
-        }
+        },
     };
 
     // Parse detection stats
@@ -432,13 +476,12 @@ pub async fn search_existing_urlscan(url: &str, api_key: &str) -> Option<String>
     // Get the first result (most recent) that matches the exact URL
     if let Some(results) = search_json["results"].as_array() {
         for result in results {
-            if let Some(page_url) = result["page"]["url"].as_str() {
-                if page_url == url {
-                    if let Some(uuid) = result["_id"].as_str() {
-                        tracing::info!(url = %url, uuid = %uuid, "URLScan.io: Scansione precedente trovata");
-                        return Some(uuid.to_string());
-                    }
-                }
+            if let Some(page_url) = result["page"]["url"].as_str()
+                && page_url == url
+                && let Some(uuid) = result["_id"].as_str()
+            {
+                tracing::info!(url = %url, uuid = %uuid, "URLScan.io: Scansione precedente trovata");
+                return Some(uuid.to_string());
             }
         }
     }
@@ -464,7 +507,7 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
         _ => {
             tracing::debug!("URLScan.io: API key non configurata, scansione disabilitata");
             return None;
-        }
+        },
     };
 
     tracing::info!(url = %url, "URLScan.io: Scansione in corso...");
@@ -501,7 +544,7 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
                     "⚠️ <b>URLScan.io non raggiungibile</b>\nRiprova tra qualche minuto."
                         .to_string(),
                 );
-            }
+            },
         };
 
         if submit_resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
@@ -608,7 +651,7 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
                 • Assicurati che l'URL sia valido"
                         .to_string(),
                 );
-            }
+            },
         };
 
         uuid = submit_json["uuid"].as_str().map(ToString::to_string);
@@ -761,4 +804,88 @@ pub async fn check_url_urlscan(url: &str) -> Option<String> {
         📋 <a href=\"{}\">Visualizza Scansione ›</a>",
         safety_level, score, result_link
     ))
+}
+
+// ── Structured scanner implementations ────────────────────────────────────
+
+/// Enum of available scanner types.
+#[derive(Clone)]
+pub enum ScannerKind {
+    VirusTotal,
+    UrlScan,
+}
+
+impl ScannerKind {
+    pub fn config(&self) -> ScannerConfig {
+        match self {
+            ScannerKind::VirusTotal => ScannerConfig::from_env(
+                "VIRUSTOTAL_API_KEY",
+                "VIRUSTOTAL_ALERT_ONLY",
+                "VirusTotal",
+            ),
+            ScannerKind::UrlScan => ScannerConfig::from_env(
+                "URLSCAN_API_KEY",
+                "URLSCAN_ALERT_ONLY",
+                "URLScan.io",
+            ),
+        }
+    }
+
+    pub async fn scan(&self, url: &str) -> Option<String> {
+        match self {
+            ScannerKind::VirusTotal => check_url_virustotal(url).await,
+            ScannerKind::UrlScan => check_url_urlscan(url).await,
+        }
+    }
+}
+
+/// Aggregate scanner that runs multiple scanners concurrently.
+pub struct AggregateScanner {
+    scanners: Vec<ScannerKind>,
+}
+
+impl Default for AggregateScanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AggregateScanner {
+    pub fn new() -> Self {
+        Self {
+            scanners: vec![ScannerKind::VirusTotal, ScannerKind::UrlScan],
+        }
+    }
+
+    pub fn with_scanners(scanners: Vec<ScannerKind>) -> Self {
+        Self { scanners }
+    }
+
+    pub async fn scan_all(&self, url: &str) -> Option<String> {
+        let futures: Vec<_> = self.scanners.iter().map(|s| s.scan(url)).collect();
+        let results: Vec<Option<String>> = futures::future::join_all(futures).await;
+
+        let alerts: Vec<&str> = results.iter().filter_map(|r| r.as_deref()).collect();
+        if alerts.is_empty() {
+            return None;
+        }
+
+        let mut consolidated = String::from(
+            "🚨 <b>ALLERTA SICUREZZA</b> 🚨\n\
+             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
+             🔴 <b>MINACCIA RILEVATA - REPORT CONSOLIDATO</b>\n\n",
+        );
+
+        for alert in &alerts {
+            consolidated.push_str(alert);
+            consolidated.push_str("\n\n");
+        }
+
+        consolidated.push_str(
+            "⚠️ <b>ATTENZIONE:</b> Questo link è stato segnalato come pericoloso.\n\
+             Si consiglia di NON visitare la pagina.",
+        );
+
+        Some(consolidated)
+    }
 }

@@ -1,44 +1,44 @@
-# ClearURLs Bot - Cron Job Configuration Examples
+# URLCleanseBot - Cron Job Configuration Examples
 
 # ============================================
 # Database Backup Jobs
 # ============================================
 
 # Daily backup at 2 AM
-0 2 * * * /workspaces/clearurlsbot/backup_db.sh >> /var/log/clearurlsbot/backup.log 2>&1
+0 2 * * * /workspaces/urlcleansebot/backup_db.sh >> /var/log/urlcleansebot/backup.log 2>&1
 
 # Weekly backup every Sunday at 3 AM (for long-term retention)
-0 3 * * 0 /workspaces/clearurlsbot/backup_db.sh sqlite:clearurls.db /backups/weekly >> /var/log/clearurlsbot/backup_weekly.log 2>&1
+0 3 * * 0 /workspaces/urlcleansebot/backup_db.sh sqlite:urlcleanse.db /backups/weekly >> /var/log/urlcleansebot/backup_weekly.log 2>&1
 
 # Hourly backup for high-traffic instances
-0 * * * * /workspaces/clearurlsbot/backup_db.sh >> /var/log/clearurlsbot/backup_hourly.log 2>&1
+0 * * * * /workspaces/urlcleansebot/backup_db.sh >> /var/log/urlcleansebot/backup_hourly.log 2>&1
 
 # ============================================
 # Log Rotation
 # ============================================
 
 # Compress logs older than 7 days (daily at 4 AM)
-0 4 * * * find /var/log/clearurlsbot -name "*.log" -mtime +7 -exec gzip {} \;
+0 4 * * * find /var/log/urlcleansebot -name "*.log" -mtime +7 -exec gzip {} \;
 
 # Delete compressed logs older than 30 days (weekly)
-0 5 * * 0 find /var/log/clearurlsbot -name "*.log.gz" -mtime +30 -delete
+0 5 * * 0 find /var/log/urlcleansebot -name "*.log.gz" -mtime +30 -delete
 
 # ============================================
 # Database Maintenance
 # ============================================
 
 # Vacuum SQLite database (optimize storage) - weekly at 4 AM
-0 4 * * 1 sqlite3 /workspaces/clearurlsbot/clearurls.db "VACUUM;" >> /var/log/clearurlsbot/vacuum.log 2>&1
+0 4 * * 1 sqlite3 /workspaces/urlcleansebot/clearurls.db "VACUUM;" >> /var/log/urlcleansebot/vacuum.log 2>&1
 
 # Analyze tables for query optimization - daily at 5 AM
-0 5 * * * sqlite3 /workspaces/clearurlsbot/clearurls.db "ANALYZE;" >> /var/log/clearurlsbot/analyze.log 2>&1
+0 5 * * * sqlite3 /workspaces/urlcleansebot/clearurls.db "ANALYZE;" >> /var/log/urlcleansebot/analyze.log 2>&1
 
 # ============================================
 # Health Checks and Monitoring
 # ============================================
 
 # Check if bot process is running every 5 minutes
-*/5 * * * * pgrep -f "clear_urls_bot" > /dev/null || (echo "Bot is down!" | mail -s "ClearURLs Bot Alert" admin@example.com)
+*/5 * * * * pgrep -f "url_cleanse_bot" > /dev/null || (echo "Bot is down!" | mail -s "URLCleanseBot Alert" admin@example.com)
 
 # Disk space check - daily at 6 AM
 0 6 * * * df -h | grep -E '(9[0-9]|100)%' && echo "Disk space critical" | mail -s "Disk Space Alert" admin@example.com
@@ -49,10 +49,10 @@
 
 # Upload backups to S3/MinIO daily at 3 AM
 # Requires: apt-get install awscli or mc (MinIO client)
-#0 3 * * * aws s3 sync /workspaces/clearurlsbot/backups s3://my-bucket/clearurlsbot-backups/ --delete
+#0 3 * * * aws s3 sync /workspaces/urlcleansebot/backups s3://my-bucket/urlcleansebot-backups/ --delete
 
 # Upload to remote server via rsync
-#30 3 * * * rsync -avz /workspaces/clearurlsbot/backups/ user@backup-server:/backups/clearurlsbot/
+#30 3 * * * rsync -avz /workspaces/urlcleansebot/backups/ user@backup-server:/backups/urlcleansebot/
 
 # ============================================
 # Installation Instructions
@@ -61,8 +61,8 @@
 # 2. Edit with your paths: nano /tmp/clearurls_cron
 # 3. Install: crontab /tmp/clearurls_cron
 # 4. Verify: crontab -l
-# 5. View logs: tail -f /var/log/clearurlsbot/backup.log
+# 5. View logs: tail -f /var/log/urlcleansebot/backup.log
 #
 # Note: Ensure log directory exists:
-# mkdir -p /var/log/clearurlsbot
-# chown $(whoami):$(whoami) /var/log/clearurlsbot
+# mkdir -p /var/log/urlcleansebot
+# chown $(whoami):$(whoami) /var/log/urlcleansebot
