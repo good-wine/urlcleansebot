@@ -80,9 +80,16 @@ cargo test --lib                          # unit tests
 cargo test --test bot_commands_tests      # command integration
 cargo test --test database_tests          # database
 cargo test --test sanitizer_tests         # sanitizer (needs network)
+cargo test --test wiremock_tests          # wiremock HTTP mocking
+
+# Mockall-based tests (requires feature flag)
+cargo test --features test-utils --test trait_tests
 
 # Property-based tests (proptest)
 cargo test normalize_is_idempotent        # single proptest
+
+# Benchmarks
+cargo bench
 ```
 
 ### Test Structure
@@ -95,26 +102,41 @@ cargo test normalize_is_idempotent        # single proptest
 
 ```
 src/
-├── presentation/telegram/  # Bot handlers, commands, UI
-├── sanitizer/              # URL cleaning engine
+├── presentation/telegram/  # Bot handlers, commands, UI (handlers/ split by concern)
+├── sanitizer/              # URL cleaning engine (rule_engine/ split into submodules)
 ├── redirects/              # Alternative frontend detection
 ├── db/                     # Database layer
-├── shared/                 # Error types, security utils
+├── shared/                 # Error types, security utils, trait ports
+│   └── ports/              # DatabasePort, SanitizerService, AiProvider, RedirectProvider
+├── i18n/                   # Translations (15 per-language modules)
 ├── metrics.rs              # Prometheus counters
 ├── config.rs               # Configuration
+├── logging.rs              # Structured tracing + OTLP
 ├── main.rs                 # Orchestrator (~50 lines)
 └── lib.rs                  # Module declarations
+tests/
+├── trait_tests.rs          # Mockall-based mock tests (--features test-utils)
+├── wiremock_tests.rs       # HTTP mocking for rule download error handling
+├── sanitizer_tests.rs      # Real ClearURLs + proptest invariants
+├── database_tests.rs       # SQLite-backed DB operations
+├── bot_commands_tests.rs   # Command handler formatting
+└── common/                 # Shared test utilities (Db setup, test config)
+benches/
+├── sanitization.rs         # Criterion: URL parsing, query params, regex
+└── entropy.rs              # Criterion: Shannon entropy, encode/decode
 ```
 
 ### Adding New Features
 
-1. **Commands** — Add to `presentation/telegram/commands.rs`, register in `handlers.rs`
+1. **Commands** — Add to `presentation/telegram/commands.rs`, register in `handlers/message.rs` or `handlers/mod.rs`
 2. **UI helpers** — Add to `presentation/telegram/helpers.rs` (with tests)
-3. **Sanitization rules** — `sanitizer/rule_engine.rs` or `sanitizer/multi_source.rs`
-4. **Database ops** — `db/implementation.rs`, update `db/models.rs`
-5. **Languages** — Add translations in `i18n.rs` + language code to `SUPPORTED_LANGUAGES` in `helpers.rs` (see [LANGUAGES.md](LANGUAGES.md))
+3. **Sanitization rules** — `sanitizer/rule_engine/clearurls.rs` or `sanitizer/multi_source.rs`
+4. **Database ops** — `db/implementation.rs`, update `db/models.rs`, add to `DatabasePort` trait + `MockDatabasePort` mock
+5. **Languages** — Add new file in `src/i18n/` + register in `mod.rs`, add language code to `SUPPORTED_LANGUAGES` in `helpers.rs` (see [LANGUAGES.md](LANGUAGES.md))
 6. **Configuration** — `config.rs` + `.env.example`
-7. **Metrics** — Atomic counter in `metrics.rs` + `render_prometheus()`
+7. **Metrics** — `prometheus::Counter` in `metrics.rs`, registered in `describe()` and `render_prometheus()`
+8. **Traits** — New port interface? Add to `shared/ports/` with `#[cfg_attr(any(test, feature = "test-utils"), mockall::automock)]`
+9. **Wiremock tests** — Add to `tests/wiremock_tests.rs` for any new HTTP-dependent functionality
 
 ## Code Quality Standards
 

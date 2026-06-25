@@ -32,8 +32,12 @@ AI-powered sanitization.
 - **Inline Mode** — Clean URLs from the inline query bar
 - **Group Support** — Per-chat reply/delete configuration
 - **Statistics & Leaderboards** — Personal stats, domain breakdowns, top users, trending links
-- **Rate Limiting & Abuse Protection** — Per-user async rate limiter
-- **Prometheus Metrics** — `/metrics` endpoint for observability
+- **Rate Limiting & Abuse Protection** — Per-user async rate limiter (moka, 1 req/s)
+- **Prometheus Metrics** — `/metrics` endpoint with Counter, Histogram, Gauge
+- **OpenTelemetry Tracing** — Optional OTLP exporter for distributed tracing
+- **Health Checks** — `/health` (liveness) + `/ready` (readiness + DB ping)
+- **Graceful Shutdown** — CancellationToken for clean teardown
+- **SSRF Protection** — DNS resolution + private IP blocking on URL expansion
 
 ## Try It
 
@@ -85,6 +89,18 @@ just build && ./target/release/url_cleanse_bot
 </picture>
 <picture>
   <img src="https://img.shields.io/badge/Proptest-8B0000?style=flat&logo=rust&logoColor=white" alt="Proptest">
+</picture>
+<picture>
+  <img src="https://img.shields.io/badge/Mockall-00A86B?style=flat&logo=rust&logoColor=white" alt="Mockall">
+</picture>
+<picture>
+  <img src="https://img.shields.io/badge/Wiremock-FF6600?style=flat&logo=rust&logoColor=white" alt="Wiremock">
+</picture>
+<picture>
+  <img src="https://img.shields.io/badge/Prometheus-E6522C?style=flat&logo=prometheus&logoColor=white" alt="Prometheus">
+</picture>
+<picture>
+  <img src="https://img.shields.io/badge/OpenTelemetry-000000?style=flat&logo=opentelemetry&logoColor=white" alt="OpenTelemetry">
 </picture>
 
 ## Architecture
@@ -157,36 +173,63 @@ flowchart LR
 
 ```
 src/
+├── lib.rs                   # Module declarations (#![deny(unused_crate_dependencies)])
+├── main.rs                  # Orchestrator (~50 lines)
+├── config.rs                # Environment-based configuration
+├── constants.rs             # Application-wide constants
+├── metrics.rs               # Prometheus counters (Counter, Histogram, Gauge)
+├── http_utils.rs            # HTTP retry with exponential backoff
+├── i18n/                    # Internationalization (15 languages)
+│   ├── mod.rs               # Translations struct + get_translations()
+│   └── it.rs, en.rs, ...    # Per-language translation modules
+├── logging.rs               # Structured tracing + optional OpenTelemetry OTLP
 ├── presentation/telegram/   # Handlers, UI, settings, command dispatcher
-│   ├── handlers.rs          # Message/callback/inline dispatch
-│   ├── commands.rs          # Command implementations
-│   ├── helpers.rs           # Keyboards, UI helpers
-│   ├── settings.rs          # Settings navigation
-│   └── command_dispatcher.rs# Trait-based dispatch
+│   ├── handlers/            # Bot message/callback/inline dispatch
+│   │   ├── mod.rs           # run_bot(), health/metrics HTTP handlers
+│   │   ├── message.rs       # handle_message, handle_edited_message
+│   │   ├── inline.rs        # handle_inline_query, handle_chosen_inline_result
+│   │   └── callback.rs      # handle_callback with dedup cache
+│   ├── commands.rs          # Command handler functions
+│   ├── command_dispatcher.rs# Trait-based command dispatch
+│   ├── helpers.rs           # Keyboards, URL extraction, UI helpers
+│   ├── settings.rs          # Settings callback navigation
+│   └── tests.rs             # Command integration tests (stubs)
 ├── sanitizer/               # URL cleaning engine
-│   ├── rule_engine.rs       # ClearURLs patterns + regex cleaning
+│   ├── rule_engine/         # ClearURLs rule compiler + SSRF protection
+│   │   ├── mod.rs           # RuleEngine struct, sanitize(), clean_url_in_place()
+│   │   ├── clearurls.rs     # RawProvider, CompiledProvider parsing
+│   │   ├── expand.rs        # Short URL expansion with SSRF guard
+│   │   ├── redact.rs        # Sensitive data redaction (AWS keys, passwords, etc.)
+│   │   ├── ssrf.rs          # Private/reserved IP detection
+│   │   └── github.rs        # GitHub URL truncation
 │   ├── ai_engine.rs         # Optional OpenAI-compatible API
 │   ├── entropy.rs           # Shannon entropy tracker detection
 │   ├── multi_source.rs      # url-sanitize-core wrapper
-│   ├── normalize.rs         # URL canonicalization
+│   ├── normalize.rs         # URL canonicalization (url-normalize)
+│   ├── pipeline.rs          # Sanitization pipeline orchestrator
+│   ├── classifier.rs        # Tracking vs functional param classifier
+│   ├── aggressive.rs        # Aggressive tracking parameter removal
+│   ├── honor_creator.rs     # Affiliate link preservation
+│   ├── linkumori.rs         # Linkumori community rules
 │   └── validation.rs        # URL validation cache
 ├── redirects/               # Alternative frontend detection
 │   ├── service.rs           # LibRedirect + Farside lookup
 │   ├── models.rs            # Frontend data structures
 │   └── cache.rs             # TTL-based catalog cache
 ├── db/                      # Database layer
-│   ├── implementation.rs    # SQL operations (SQLite/PostgreSQL)
-│   └── models.rs            # Data models
-├── shared/                  # Cross-cutting
-│   └── error.rs             # AppError, AppResult
-│   └── security.rs          # Rate limiter, validation
-├── config.rs                # Environment configuration
-├── metrics.rs               # Prometheus counters
-├── http_utils.rs            # HTTP retry with backoff
-├── i18n.rs                  # 15 languages
-├── logging.rs               # Structured logging (tracing)
-├── lib.rs                   # Module declarations
-└── main.rs                  # Orchestrator (~50 lines)
+│   ├── implementation.rs    # Db struct with SQL operations + DatabasePort impl
+│   ├── models.rs            # UserConfig, ChatConfig, CleanedLink, CustomRule
+│   └── migrations/          # SQL migration files
+├── shared/                  # Cross-cutting concerns
+│   ├── error.rs             # AppError, AppResult
+│   ├── security.rs          # Rate limiter, input sanitization, HMAC
+│   └── ports/               # Trait interfaces for testability
+│       ├── database.rs      # DatabasePort trait (+ MockDatabasePort)
+│       ├── sanitizer.rs     # SanitizerService trait (+ MockSanitizerService)
+│       ├── ai.rs            # AiProvider trait (+ MockAiProvider)
+│       └── redirect.rs      # RedirectProvider trait (+ MockRedirectProvider)
+├── presentation/            # (reserved for future UI layers)
+└── config/                  # (reserved for future config profiles)
 ```
 
 ## Documentation

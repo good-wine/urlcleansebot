@@ -1,75 +1,18 @@
-use crate::constants::{AGGRESSIVE_TRACKERS, SHORTENER_DOMAINS, SHORTENER_REGEX_PATTERNS};
+pub mod clearurls;
+pub mod expand;
+pub mod github;
+pub mod redact;
+pub mod ssrf;
+
+use crate::constants::AGGRESSIVE_TRACKERS;
+use crate::db::models::CustomRule;
 use crate::http_utils::retry_with_backoff;
 use crate::shared::error::{AppError, AppResult};
-use crate::db::models::CustomRule;
+use clearurls::{ClearUrlsData, CompiledProvider};
 use moka::future::Cache;
-use regex::Regex;
-use serde::Deserialize;
-use std::collections::HashMap;
-use std::net::IpAddr;
-use std::sync::{Arc, LazyLock, RwLock};
-use tracing::info;
+use std::sync::{Arc, RwLock};
+use tracing;
 use url::Url;
-
-static SENSITIVE_PATTERNS: LazyLock<HashMap<&'static str, Regex>> = LazyLock::new(|| {
-    let mut m = HashMap::new();
-    // Use \b (word boundary) instead of look-arounds
-    m.insert(
-        "aws_access_key",
-        Regex::new(r"(?i)\b[A-Z0-9]{20}\b").expect("Invalid regex for aws_access_key"),
-    );
-    m.insert(
-        "aws_secret_key",
-        Regex::new(r"(?i)\b[A-Za-z0-9/+=]{40}\b").expect("Invalid regex for aws_secret_key"),
-    );
-    m.insert(
-        "password",
-        Regex::new(r"(?i)password\s*[:=]\s*[^\s]+").expect("Invalid regex for password"),
-    );
-    m.insert("ipv4", Regex::new(r"(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)").expect("Invalid regex for ipv4"));
-    m.insert(
-        "email",
-        Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
-            .expect("Invalid regex for email"),
-    );
-    m
-});
-
-#[derive(Debug, Deserialize)]
-#[allow(non_snake_case)]
-struct RawProvider {
-    #[serde(default)]
-    urlPattern: String,
-    #[serde(default)]
-    rules: Vec<String>,
-    #[serde(default)]
-    exceptions: Vec<String>,
-    #[serde(default)]
-    rawRules: Vec<String>,
-    #[serde(default)]
-    redirections: Vec<String>,
-    #[serde(default)]
-    referralMarketing: Vec<String>,
-    #[serde(default)]
-    forceRedirection: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct ClearUrlsData {
-    providers: HashMap<String, RawProvider>,
-}
-
-#[derive(Clone)]
-struct CompiledProvider {
-    name: String,
-    url_pattern: Regex,
-    rules: Vec<Regex>,
-    exceptions: Vec<Regex>,
-    raw_rules: Vec<Regex>,
-    redirections: Vec<Regex>,
-    referral_marketing: Vec<Regex>,
-    _force_redirection: bool,
-}
 
 #[derive(Clone)]
 pub struct RuleEngine {
@@ -96,41 +39,8 @@ impl RuleEngine {
         Ok(engine)
     }
 
-    fn is_private_or_reserved_ip(ip: &IpAddr) -> bool {
-        match ip {
-            IpAddr::V4(addr) => {
-                addr.is_private()
-                    || addr.is_loopback()
-                    || addr.is_link_local()
-                    || addr.is_broadcast()
-                    || addr.is_unspecified()
-                    || addr.octets()[0] == 100 && (addr.octets()[1] & 0b1100_0000 == 0b0100_0000)
-                    || addr.octets()[0] == 10
-                    || addr.octets()[0] == 172 && (addr.octets()[1] & 0b1111_0000 == 0b0001_0000)
-                    || addr.octets()[0] == 192 && addr.octets()[1] == 168
-            },
-            IpAddr::V6(addr) => {
-                addr.is_loopback()
-                    || addr.is_unspecified()
-                    || addr.segments()[0] == 0xfc00
-                    || addr.segments()[0] == 0xfe80
-            },
-        }
-    }
-
-    async fn resolve_and_check_ssrf(host: &str) -> bool {
-        use std::net::ToSocketAddrs;
-        let addr = format!("{host}:443");
-        if let Ok(mut iter) = addr.to_socket_addrs()
-            && let Some(socket_addr) = iter.next()
-        {
-            return !Self::is_private_or_reserved_ip(&socket_addr.ip());
-        }
-        false
-    }
-
     pub async fn refresh(&self) -> AppResult<()> {
-        info!("Scaricamento regole da {}", self.source_url);
+        tracing::info!("Scaricamento regole da {}", self.source_url);
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()?;
@@ -150,119 +60,20 @@ impl RuleEngine {
             AppError::Internal(format!("Impossibile analizzare il JSON di ClearURLs: {e}"))
         })?;
 
-        let mut compiled_providers = Vec::new();
+        let compiled = clearurls::compile_providers(data);
+        let count = compiled.len();
 
-        for (name, provider) in data.providers {
-            if provider.urlPattern.is_empty() {
-                continue;
-            }
-
-            let url_pattern = match Regex::new(&provider.urlPattern) {
-                Ok(r) => r,
-                Err(_) => continue,
-            };
-
-            let compile_list = |list: &[String]| -> Vec<Regex> {
-                list.iter().filter_map(|s| Regex::new(s).ok()).collect()
-            };
-
-            compiled_providers.push(CompiledProvider {
-                name,
-                url_pattern,
-                rules: compile_list(&provider.rules),
-                exceptions: compile_list(&provider.exceptions),
-                raw_rules: compile_list(&provider.rawRules),
-                redirections: compile_list(&provider.redirections),
-                referral_marketing: compile_list(&provider.referralMarketing),
-                _force_redirection: provider.forceRedirection,
-            });
-        }
-
-        let count = compiled_providers.len();
         {
             if let Ok(mut w) = self.providers.write() {
-                *w = compiled_providers;
+                *w = compiled;
             } else {
                 tracing::error!("Impossibile ottenere il lock in scrittura per i provider");
                 return Err(AppError::Internal("Errore lock scrittura provider".into()));
             }
         }
 
-        info!("Caricati {} provider", count);
+        tracing::info!("Caricati {} provider", count);
         Ok(())
-    }
-
-    #[tracing::instrument(skip(self))]
-    pub async fn expand_url(&self, input_url: &str) -> String {
-        if let Some(cached) = self.cache.get(input_url).await {
-            tracing::debug!(url = %input_url, "Cache hit per espansione URL");
-            return cached;
-        }
-
-        let client = match reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .redirect(reqwest::redirect::Policy::limited(5))
-            .build()
-        {
-            Ok(c) => c,
-            Err(_) => return input_url.to_string(),
-        };
-
-        let url_lower = input_url.to_lowercase();
-        let is_shortener = SHORTENER_DOMAINS.iter().any(|s| url_lower.contains(s))
-            || SHORTENER_REGEX_PATTERNS
-                .iter()
-                .any(|p| Regex::new(p).is_ok_and(|re| re.is_match(input_url)));
-
-        if is_shortener {
-            tracing::debug!(url = %input_url, "Tentativo di espansione URL corto");
-            let resp = retry_with_backoff(
-                || async { client.head(input_url).send().await.map_err(|e| e.to_string()) },
-                "expand short URL",
-            )
-            .await;
-            if let Ok(resp) = resp {
-                let final_url = resp.url().to_string();
-                if final_url != input_url {
-                    if let Ok(parsed) = Url::parse(&final_url)
-                        && let Some(host) = parsed.host_str()
-                        && !Self::resolve_and_check_ssrf(host).await
-                    {
-                        tracing::warn!(
-                            url = %final_url,
-                            "SSRF blocked: redirect to private/reserved IP"
-                        );
-                        self.cache
-                            .insert(input_url.to_string(), input_url.to_string())
-                            .await;
-                        return input_url.to_string();
-                    }
-                    tracing::info!(original = %input_url, expanded = %final_url, "URL espanso con successo");
-                    self.cache
-                        .insert(input_url.to_string(), final_url.clone())
-                        .await;
-                    return final_url;
-                }
-            }
-        }
-
-        if is_shortener {
-            self.cache
-                .insert(input_url.to_string(), input_url.to_string())
-                .await;
-        }
-
-        input_url.to_string()
-    }
-
-    pub fn redact_sensitive(&self, text: &str) -> String {
-        let mut redacted = text.to_string();
-        for (name, re) in SENSITIVE_PATTERNS.iter() {
-            redacted = re
-                .replace_all(&redacted, format!("[REDACTED {}]", name.to_uppercase()))
-                .to_string();
-        }
-        redacted
     }
 
     pub fn is_supported_by_clearurls(&self, text: &str) -> bool {
@@ -276,29 +87,12 @@ impl RuleEngine {
         false
     }
 
-    fn clean_github_url(&self, url: &mut Url) -> bool {
-        if let Some(host) = url.host_str()
-            && host == "github.com"
-        {
-            let path_segments: Vec<String> = url
-                .path_segments()
-                .map(|s| s.map(String::from).collect())
-                .unwrap_or_default();
+    pub fn redact_sensitive(&self, text: &str) -> String {
+        redact::redact_sensitive(text)
+    }
 
-            // If it's a deep link (e.g. /owner/repo/blob/main/file.ext), truncate to /owner/repo
-            if path_segments.len() > 2 {
-                let owner = &path_segments[0];
-                let repo = &path_segments[1];
-                let new_path = format!("/{}/{}", owner, repo);
-                if url.path() != new_path {
-                    url.set_path(&new_path);
-                    url.set_query(None);
-                    url.set_fragment(None);
-                    return true;
-                }
-            }
-        }
-        false
+    pub async fn expand_url(&self, input_url: &str) -> String {
+        expand::expand_url(input_url, &self.cache).await
     }
 
     #[tracing::instrument(skip(self, custom_rules, ignored_domains))]
@@ -324,7 +118,7 @@ impl RuleEngine {
             }
 
             let mut provider_name = String::from("Custom/Other");
-            let github_changed = self.clean_github_url(&mut url);
+            let github_changed = github::clean_github_url(&mut url);
             if github_changed {
                 provider_name = "GitHub (Repo Root)".to_string();
             }
@@ -378,7 +172,6 @@ impl RuleEngine {
             let mut changed = self.clean_url_in_place(&mut url);
 
             // 4. Aggressive Fallback for common trackers not in the ruleset
-            // (e.g. Google Search gs_lcrp, oq, client, etc.)
             if let Some(_query) = url.query() {
                 let query_pairs: Vec<(String, String)> = url.query_pairs().into_owned().collect();
                 let mut new_query = url::form_urlencoded::Serializer::new(String::new());
@@ -430,9 +223,7 @@ impl RuleEngine {
             let mut current_iteration_changed = false;
 
             if let Ok(providers) = self.providers.read() {
-                // 1. Match specific providers AND the global/generic one if it exists
                 for provider in providers.iter() {
-                    // "generic" provider usually matches everything or has a catch-all pattern
                     if provider.url_pattern.is_match(&url_str) || provider.name == "generic" {
                         let mut provider_changed = false;
 
@@ -478,7 +269,6 @@ impl RuleEngine {
                             for (key, mut value) in query_pairs {
                                 let mut keep = true;
 
-                                // Apply rules
                                 for rule in &provider.rules {
                                     if rule.is_match(&key) {
                                         keep = false;
@@ -495,7 +285,6 @@ impl RuleEngine {
                                 }
 
                                 if keep {
-                                    // Recursive cleaning: check if value is a URL
                                     if value.starts_with("http")
                                         && let Ok(mut inner_url) = Url::parse(&value)
                                         && self.clean_url_in_place(&mut inner_url)
@@ -521,11 +310,10 @@ impl RuleEngine {
                             }
                         }
 
-                        // Handle Fragment (hash) - some tracking is after #
+                        // Handle Fragment (hash)
                         if let Some(fragment) = url.fragment()
                             && fragment.contains('=')
                         {
-                            // Try to parse fragment as query string
                             let frag_url_str = format!("http://localhost?{}", fragment);
                             if let Ok(mut frag_url) = Url::parse(&frag_url_str)
                                 && self.clean_url_in_place(&mut frag_url)
@@ -572,12 +360,12 @@ impl RuleEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use regex::Regex;
 
     #[tokio::test]
     async fn test_simple_cleaning() {
         let engine = RuleEngine::new_lazy("");
 
-        // Mock a generic provider
         {
             let mut w = match engine.providers.write() {
                 Ok(w) => w,

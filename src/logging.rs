@@ -4,9 +4,9 @@ use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt, util::S
 
 /// Initializes the logging and tracing system.
 ///
-/// Supports two modes based on the `APP_ENV` environment variable:
-/// - `development` (default): Pretty-printed, colored logs for console.
-/// - `production`: JSON-formatted logs for aggregation (Datadog, ELK, etc.).
+/// Two modes based on `APP_ENV`:
+/// - `development` (default): Pretty-printed, colored console output.
+/// - `production`: JSON-formatted logs for structured ingestion.
 pub fn init_logging() {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("url_cleanse_bot=info,teloxide=info,axum=info"));
@@ -29,4 +29,9 @@ pub fn init_logging() {
     }
 
     tracing::info!(env = %env, "Sistema di logging inizializzato");
+}
+
+/// Shutdown tracing resources (placeholder for OpenTelemetry integration).
+pub fn shutdown_tracing() {
+    tracing::info!("Tracing system shut down");
 }

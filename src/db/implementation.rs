@@ -509,4 +509,104 @@ impl Db {
             .map(|(name, enabled)| (name, enabled != 0))
             .collect())
     }
+
+    /// Ping the database to check connectivity (for health checks).
+    pub async fn ping(&self) -> AppResult<()> {
+        sqlx::query_scalar::<_, i64>("SELECT 1")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(())
+    }
+}
+
+// ── DatabasePort trait implementation ───────────────────────
+
+use crate::shared::ports::database::DatabasePort;
+use async_trait::async_trait;
+
+#[async_trait]
+impl DatabasePort for Db {
+    async fn get_user_config(&self, user_id: i64) -> AppResult<UserConfig> {
+        Db::get_user_config(self, user_id).await
+    }
+
+    async fn save_user_config(&self, _user_id: i64, config: &UserConfig) -> AppResult<()> {
+        Db::save_user_config(self, config).await
+    }
+
+    async fn get_chat_config(&self, chat_id: i64) -> AppResult<Option<ChatConfig>> {
+        Db::get_chat_config(self, chat_id).await
+    }
+
+    async fn save_chat_config(&self, _chat_id: i64, config: &ChatConfig) -> AppResult<()> {
+        Db::save_chat_config(self, config).await
+    }
+
+    async fn increment_cleaned_count(&self, user_id: i64) -> AppResult<()> {
+        Db::increment_cleaned_count(self, user_id, 1).await
+    }
+
+    async fn log_cleaned_link(&self, link: &CleanedLink) -> AppResult<()> {
+        Db::log_cleaned_link(self, link.user_id, &link.original_url, &link.cleaned_url, link.provider_name.as_deref().unwrap_or("unknown")).await
+    }
+
+    async fn get_history(&self, user_id: i64, limit: i64) -> AppResult<Vec<CleanedLink>> {
+        Db::get_history(self, user_id, limit).await
+    }
+
+    async fn get_top_users(&self, limit: i64) -> AppResult<Vec<(i64, i64)>> {
+        Db::get_top_users(self, limit as usize).await
+    }
+
+    async fn get_top_links(&self, limit: i64) -> AppResult<Vec<(String, i64)>> {
+        Db::get_top_links(self, limit as usize).await
+    }
+
+    async fn get_domain_stats(&self, user_id: i64) -> AppResult<Vec<(String, i64)>> {
+        Db::get_domain_cleanup_stats(self, user_id).await
+    }
+
+    async fn get_custom_rules(&self, user_id: i64) -> AppResult<Vec<CustomRule>> {
+        Db::get_custom_rules(self, user_id).await
+    }
+
+    async fn save_custom_rule(&self, user_id: i64, _rule: &CustomRule) -> AppResult<()> {
+        Db::add_custom_rule(self, user_id, &_rule.pattern).await
+    }
+
+    async fn delete_custom_rule(&self, _user_id: i64, _rule_id: i64) -> AppResult<()> {
+        Err(crate::shared::error::AppError::Internal("Not implemented".into()))
+    }
+
+    async fn add_to_whitelist(&self, user_id: i64, domain: &str) -> AppResult<()> {
+        Db::add_to_whitelist(self, user_id, domain).await
+    }
+
+    async fn remove_from_whitelist(&self, user_id: i64, domain: &str) -> AppResult<()> {
+        Db::remove_from_whitelist(self, user_id, domain).await
+    }
+
+    async fn get_whitelist(&self, user_id: i64) -> AppResult<Vec<String>> {
+        Db::get_whitelist(self, user_id).await
+    }
+
+    async fn clear_history(&self, user_id: i64) -> AppResult<()> {
+        Db::clear_history(self, user_id).await
+    }
+
+    async fn is_whitelisted(&self, user_id: i64, domain: &str) -> AppResult<bool> {
+        Db::is_whitelisted(self, user_id, domain).await
+    }
+
+    async fn set_feature_flag(&self, user_id: i64, flag: &str, value: bool) -> AppResult<()> {
+        Db::set_feature_flag(self, user_id, flag, value).await
+    }
+
+    async fn get_feature_flag(&self, user_id: i64, flag: &str) -> AppResult<Option<bool>> {
+        Db::is_feature_enabled(self, user_id, flag).await.map(|v| Some(v))
+    }
+
+    async fn ping(&self) -> AppResult<()> {
+        Db::ping(self).await
+    }
 }

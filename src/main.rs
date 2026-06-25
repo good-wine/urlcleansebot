@@ -1,8 +1,4 @@
-//! Main entry point for URLCleanseBot.
-//!
-//! Uses the extracted Telegram handler modules from `presentation/telegram`.
-//! Clean Architecture skeleton is preserved in the application layer for future use.
-
+use tokio::sync::broadcast;
 use url_cleanse_bot::{
     config::Config,
     db::Db,
@@ -10,7 +6,6 @@ use url_cleanse_bot::{
     presentation::telegram::handlers::run_bot,
     sanitizer::{AiEngine, RuleEngine, linkumori::LinkumoriEngine},
 };
-use tokio::sync::broadcast;
 
 #[tokio::main]
 async fn main() {
@@ -62,5 +57,19 @@ async fn main() {
 
     tracing::info!("URLCleanseBot started with user_id={}", config.admin_id);
 
-    run_bot(bot, db, rules, ai, linkumori, config, event_tx).await;
+    // Graceful shutdown via CancellationToken
+    let shutdown_token = tokio_util::sync::CancellationToken::new();
+    let shutdown_clone = shutdown_token.clone();
+
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("Received Ctrl+C, initiating graceful shutdown...");
+        shutdown_clone.cancel();
+    });
+
+    run_bot(bot, db, rules, ai, linkumori, config, event_tx, shutdown_token).await;
+
+    // Flush remaining tracing data
+    logging::shutdown_tracing();
+    tracing::info!("URLCleanseBot shut down gracefully");
 }

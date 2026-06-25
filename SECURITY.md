@@ -24,6 +24,12 @@
 - **Normalization** — UTM stripping, parameter sorting, canonicalization via `url-normalize`
 - **AI engine** — Optional OpenAI-compatible pass for edge cases
 
+### SSRF Protection
+
+- **DNS resolution check** — Short URL expansion resolves the target hostname before following redirects
+- **Private IP blocking** — All private, reserved, loopback, link-local, and broadcast IP ranges blocked for both IPv4 and IPv6 (ULA, link-local)
+- **Scope**: Applies to all shortlink expansion (bit.ly, tinyurl, etc.) and any URL that requires DNS resolution
+
 ### Permission Controls
 
 - **Admin-only actions** — All administrative operations check `ADMIN_ID`

@@ -26,12 +26,25 @@ pub async fn handle_start(
     tr: &Translations,
     _args: &[&str],
 ) -> CommandResult {
-    let msg = tr.welcome.replace("{}", &user_id.to_string());
-    bot.send_message(chat_id, msg)
+    use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
+    let welcome_text = tr.welcome.replace("{}", &user_id.to_string());
+    let keyboard = InlineKeyboardMarkup::new(vec![vec![
+        InlineKeyboardButton::callback(tr.start_open_settings, format!("settings:{}", user_id)),
+        InlineKeyboardButton::callback(tr.start_view_stats, format!("user_setting:stats:{}", user_id)),
+    ]]);
+    bot.send_message(chat_id, welcome_text)
         .parse_mode(ParseMode::Html)
+        .reply_markup(keyboard)
         .await
         .map_err(|e| {
             error!(?e, "Errore nell'invio del messaggio di benvenuto");
+            AppError::Telegram(e)
+        })?;
+    bot.send_message(chat_id, tr.reply_keyboard_opened)
+        .reply_markup(super::helpers::main_reply_keyboard(tr))
+        .await
+        .map_err(|e| {
+            error!(?e, "Errore nell'invio della tastiera");
             AppError::Telegram(e)
         })?;
     Ok(())

@@ -64,7 +64,7 @@ pub async fn run_sanitization_pipeline(
         return None;
     }
 
-    metrics::SANITIZATIONS_CLEANED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    metrics::SANITIZATIONS_CLEANED.inc();
 
     let mut current_url = cleaned_url;
     let mut current_provider = provider;
@@ -72,7 +72,7 @@ pub async fn run_sanitization_pipeline(
     if user_config.is_ai_enabled()
         && let Ok(Some(ai_cleaned)) = ai.sanitize(&current_url).await
     {
-        metrics::AI_SANITIZATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        metrics::AI_SANITIZATIONS.inc();
         current_url = ai_cleaned;
         current_provider = format!("AI ({current_provider})");
     }

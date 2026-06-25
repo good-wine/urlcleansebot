@@ -19,10 +19,11 @@ all = { level = "deny", priority = -1 }
 [dependencies]
 # Tokio with only needed features (instead of "full")
 tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "fs"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 teloxide = { version = "0.17", default-features = false, features = ["macros", "webhooks", "webhooks-axum", "ctrlc_handler", "rustls"] }
 axum = "0.8.9"
 dptree = "0.5"
-sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "postgres", "macros", "uuid", "any", "chrono"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "postgres", "macros", "uuid", "any", "chrono", "migrate"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
@@ -31,6 +32,10 @@ url = "2.5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "time", "registry"] }
 tracing-error = "0.2"
+tracing-opentelemetry = "0.30"
+opentelemetry = { version = "0.29", features = ["trace", "metrics"] }
+opentelemetry_sdk = { version = "0.29", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.29", features = ["trace", "metrics"] }
 dotenvy = "0.15"
 futures = "0.3"
 
@@ -48,8 +53,40 @@ url-normalize = "0.1"
 # Multi-source tracking parameter removal (ClearURLs + AdGuard + Brave + Firefox)
 url-sanitize-core = "2.0"
 
+# Metrics
+prometheus = { version = "0.14", features = ["process"] }
+
+# UUID for request IDs
+uuid = { version = "1.16", features = ["v4"] }
+
+# Async traits
+async-trait = "0.1"
+
+# Mockall for test mocks (optional, behind test-utils feature)
+mockall = { version = "0.13", optional = true }
+
+[features]
+default = []
+test-utils = ["dep:mockall"]
+
 [dev-dependencies]
 proptest = "1.6"
+mockall = "0.13"
+criterion = { version = "0.6", features = ["html_reports"] }
+wiremock = "0.6"
+testcontainers = "0.23"
+
+[[test]]
+name = "trait_tests"
+required-features = ["test-utils"]
+
+[[bench]]
+name = "sanitization"
+harness = false
+
+[[bench]]
+name = "entropy"
+harness = false
 
 [profile.release]
 lto = "fat"
