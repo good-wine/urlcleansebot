@@ -33,7 +33,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "time", "registry"] }
 tracing-error = "0.2"
 tracing-opentelemetry = "0.30"
-opentelemetry = { version = "0.29", features = ["trace", "metrics"] }
+opentelemetry = { version = "0.32", features = ["trace", "metrics"] }
 opentelemetry_sdk = { version = "0.29", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.29", features = ["trace", "metrics"] }
 dotenvy = "0.15"
