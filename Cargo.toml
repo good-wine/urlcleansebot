@@ -63,7 +63,7 @@ uuid = { version = "1.16", features = ["v4"] }
 async-trait = "0.1"
 
 # Mockall for test mocks (optional, behind test-utils feature)
-mockall = { version = "0.13", optional = true }
+mockall = { version = "0.15", optional = true }
 
 [features]
 default = []
@@ -71,7 +71,7 @@ test-utils = ["dep:mockall"]
 
 [dev-dependencies]
 proptest = "1.6"
-mockall = "0.13"
+mockall = "0.15"
 criterion = { version = "0.6", features = ["html_reports"] }
 wiremock = "0.6"
 testcontainers = "0.23"
