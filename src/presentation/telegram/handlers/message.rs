@@ -347,7 +347,7 @@ pub async fn handle_message(
 
     if cleaned_urls.is_empty() && !is_dry_run {
         tracing::info!("Elaborazione completata: nessun URL da pulire (gia' puliti)");
-        helpers::send_alternative_frontends(&bot, chat_id, &all_urls, &redirect_service).await?;
+        helpers::send_alternative_frontends(&bot, chat_id, &all_urls, &redirect_service, msg_clone.id).await?;
         return Ok(());
     }
 
@@ -430,7 +430,7 @@ pub async fn handle_message(
         return Err(e);
     }
 
-    helpers::send_alternative_frontends(&bot, chat_id, &all_urls, &redirect_service).await?;
+    helpers::send_alternative_frontends(&bot, chat_id, &all_urls, &redirect_service, msg_clone.id).await?;
 
     Ok(())
 }

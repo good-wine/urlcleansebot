@@ -6,7 +6,7 @@ use teloxide::prelude::*;
 use teloxide::types::{
     ChatId, InlineKeyboardButton, InlineKeyboardMarkup, InlineQuery, InlineQueryResult,
     InlineQueryResultArticle, InputMessageContent, InputMessageContentText, KeyboardButton,
-    KeyboardMarkup, Message, MessageEntityKind, MessageId, ParseMode,
+    KeyboardMarkup, Message, MessageEntityKind, MessageId, ParseMode, ReplyParameters,
 };
 
 use std::collections::HashSet;
@@ -414,6 +414,7 @@ pub async fn send_alternative_frontends(
     chat_id: ChatId,
     urls: &[String],
     redirect_service: &RedirectService,
+    msg_id: teloxide::types::MessageId,
 ) -> Result<(), teloxide::RequestError> {
     let mut seen_hosts = HashSet::new();
     for url in urls {
@@ -428,6 +429,7 @@ pub async fn send_alternative_frontends(
                 let _ = bot
                     .send_message(chat_id, frontend_msg)
                     .parse_mode(ParseMode::Html)
+                    .reply_parameters(ReplyParameters::new(msg_id))
                     .await;
                 break;
             }
