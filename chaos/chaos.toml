@@ -1,0 +1,223 @@
+# Chaos Engineering Configuration for URLCleanseBot
+# Validates resilience of single-instance VPS deployment (Docker Compose)
+
+[general]
+project = "urlcleansebot"
+description = "Chaos testing suite for URLCleanseBot single-instance VPS"
+compose_file = "compose.yml"
+service_name = "url_cleanse_bot"
+health_endpoint = "http://localhost:3000/health"
+metrics_endpoint = "http://localhost:3000/metrics"
+telegram_api_allowlist = ["api.telegram.org"]
+
+# Default timeouts and retries
+[general.timeouts]
+health_check = "30s"
+scenario_duration = "120s"
+recovery_wait = "60s"
+cleanup_timeout = "30s"
+
+# SLO thresholds for verification
+[slo]
+availability_target = 0.995  # 99.5%
+error_budget_burn_rate_critical = 14.4  # 2% budget in 1h
+error_budget_burn_rate_warning = 6.0    # 5% budget in 6h
+max_latency_p99_ms = 5000
+max_error_rate_during_chaos = 0.05  # 5% during chaos scenarios
+
+# Scenario definitions
+[[scenarios]]
+name = "db_latency"
+description = "Inject 100-500ms latency on database connection"
+category = "dependency_failure"
+duration = "120s"
+enabled = true
+
+[scenarios.db_latency.injection]
+type = "tc_netem"
+target = "db"  # SQLite file, but we simulate via network proxy
+interface = "eth0"
+latency_ms_min = 100
+latency_ms_max = 500
+jitter_ms = 50
+
+[scenarios.db_latency.verification]
+expected_circuit_breaker = true
+expected_retry_count_min = 3
+max_error_rate = 0.02
+health_check_must_pass = true
+
+[[scenarios]]
+name = "db_unavailable"
+description = "Simulate database completely down (container kill/pause)"
+category = "dependency_failure"
+duration = "60s"
+enabled = true
+
+[scenarios.db_unavailable.injection]
+type = "container_kill"
+target_service = "url_cleanse_bot"
+signal = "SIGKILL"
+# Alternative: pause container
+# type = "container_pause"
+
+[scenarios.db_unavailable.verification]
+expected_graceful_degradation = true
+max_downtime_seconds = 30
+health_check_recovery = true
+
+[[scenarios]]
+name = "ai_api_failure"
+description = "Mock AI API returning 5xx, 429, timeout, invalid JSON"
+category = "external_dependency"
+duration = "180s"
+enabled = true
+
+[scenarios.ai_api_failure.injection]
+type = "toxiproxy"
+upstream = "api.openai.com"  # or configured AI endpoint
+port = 443
+toxic_latency = "5000"  # ms - simulate timeout
+toxic_bandwidth = "1024"  # KB/s
+toxic_close = false
+
+# Sequence of failure modes to test
+failure_modes = [
+  { type = "http_status", code = 500, duration = "30s", weight = 1 },
+  { type = "http_status", code = 502, duration = "30s", weight = 1 },
+  { type = "http_status", code = 503, duration = "30s", weight = 1 },
+  { type = "http_status", code = 429, duration = "30s", weight = 1 },
+  { type = "timeout", duration = "30s", weight = 2 },
+  { type = "invalid_json", duration = "30s", weight = 1 },
+]
+
+[scenarios.ai_api_failure.verification]
+expected_fallback_to_rules = true
+expected_user_notification = true
+max_error_rate = 0.03
+fallback_latency_max_ms = 2000
+
+[[scenarios]]
+name = "rule_fetch_failure"
+description = "Simulate rule source failures (ClearURLs, AdGuard, Brave, Farside, LibRedirect)"
+category = "external_dependency"
+duration = "180s"
+enabled = true
+
+[scenarios.rule_fetch_failure.injection]
+type = "network_partition"
+target_hosts = [
+  "raw.githubusercontent.com",
+  "adguardteam.github.io",
+  "brave-browser.github.io",
+  "farside.link",
+  "libredirect.github.io"
+]
+action = "drop"  # or "delay" with 10000ms
+
+[scenarios.rule_fetch_failure.verification]
+expected_stale_cache_served = true
+expected_retry_with_backoff = true
+max_staleness_hours = 24
+alert_fired = "RuleFetchFailure"
+
+[[scenarios]]
+name = "network_partition"
+description = "Isolate bot container from internet except Telegram API"
+category = "network_failure"
+duration = "120s"
+enabled = true
+
+[scenarios.network_partition.injection]
+type = "iptables"
+action = "isolate"
+allowlist = ["api.telegram.org", "127.0.0.1"]
+block_all_other = true
+
+[scenarios.network_partition.verification]
+expected_health_check_fail = true
+expected_graceful_shutdown = true
+restart_policy_triggered = true
+max_recovery_time_seconds = 60
+
+[[scenarios]]
+name = "memory_pressure"
+description = "Memory pressure test - verify OOM handling with 512M limit"
+category = "resource_exhaustion"
+duration = "180s"
+enabled = true
+
+[scenarios.memory_pressure.injection]
+type = "stress_ng"
+workers = 2
+vm_bytes = "400M"  # 80% of 512M limit
+vm_keep = true
+timeout = "180s"
+
+[scenarios.memory_pressure.verification]
+expected_no_oom_kill = true
+expected_gc_behavior = true
+max_latency_degradation_p99 = 2.0  # 2x baseline
+memory_usage_max_percent = 0.9
+
+[[scenarios]]
+name = "cpu_throttling"
+description = "CPU throttling test - verify latency degradation with 0.5 CPU limit"
+category = "resource_exhaustion"
+duration = "120s"
+enabled = true
+
+[scenarios.cpu_throttling.injection]
+type = "stress_ng"
+cpu_workers = 4  # Overload the 0.5 CPU quota
+cpu_load = 80
+timeout = "120s"
+
+[scenarios.cpu_throttling.verification]
+max_latency_degradation_p99 = 3.0  # 3x baseline acceptable under throttle
+error_rate_max = 0.01
+throttling_detected = true
+
+[[scenarios]]
+name = "disk_full"
+description = "Disk full simulation - verify logging rotation and DB write failures"
+category = "resource_exhaustion"
+duration = "120s"
+enabled = true
+
+[scenarios.disk_full.injection]
+type = "fill_disk"
+target_path = "/app"
+fill_percent = 95
+method = "fallocate"  # fast sparse file creation
+
+[scenarios.disk_full.verification]
+expected_log_rotation = true
+expected_db_write_fail_handled = true
+expected_alert_fired = "DiskSpaceCritical"
+recovery_after_cleanup = true
+
+[[scenarios]]
+name = "telegram_flood_wait"
+description = "Simulate Telegram 429 FloodWait responses"
+category = "external_dependency"
+duration = "180s"
+enabled = true
+
+[scenarios.telegram_flood_wait.injection]
+type = "toxiproxy"
+upstream = "api.telegram.org"
+port = 443
+# Inject 429 responses with Retry-After header
+failure_modes = [
+  { type = "http_status", code = 429, header = "Retry-After: 30", duration = "60s", weight = 2 },
+  { type = "http_status", code = 429, header = "Retry-After: 60", duration = "60s", weight = 1 },
+  { type = "http_status", code = 429, header = "Retry-After: 10", duration = "60s", weight = 1 },
+]
+
+[scenarios.telegram_flood_wait.verification]
+expected_backoff_respected = true
+expected_queue_buildup = true
+expected_user_notification = true
+max_queue_size = 1000
+recovery_after_flood = true

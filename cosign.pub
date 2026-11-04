@@ -1,0 +1,142 @@
+# Cosign Public Key for URLCleanseBot
+
+## Keyless Signing (OIDC) - Recommended Verification
+
+URLCleanseBot uses **keyless signing** with GitHub Actions OIDC tokens. There is no static public key file. Instead, verification is done using the certificate's identity and OIDC issuer.
+
+### Verify Container Image Signature
+
+```bash
+# Verify the container image signature
+cosign verify \
+  --certificate-identity-regexp "https://github.com/good-wine/urlcleansebot/.github/workflows/.*" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  ghcr.io/good-wine/urlcleansebot@v0.2.0
+```
+
+### Verify Container Image SBOM Attestation
+
+```bash
+# Verify SPDX SBOM attestation
+cosign verify-attestation \
+  --type spdxjson \
+  --certificate-identity-regexp "https://github.com/good-wine/urlcleansebot/.github/workflows/.*" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  ghcr.io/good-wine/urlcleansebot@v0.2.0
+
+# Verify CycloneDX SBOM attestation
+cosign verify-attestation \
+  --type cyclonedxjson \
+  --certificate-identity-regexp "https://github.com/good-wine/urlcleansebot/.github/workflows/.*" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  ghcr.io/good-wine/urlcleansebot@v0.2.0
+```
+
+### Verify SLSA Provenance
+
+```bash
+cosign verify-attestation \
+  --type slsaprovenance \
+  --certificate-identity-regexp "https://github.com/good-wine/urlcleansebot/.github/workflows/.*" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  ghcr.io/good-wine/urlcleansebot@v0.2.0
+```
+
+### Verify Release Binary (from GitHub Releases)
+
+```bash
+# Download the binary and signature files from the release
+gh release download v0.2.0 --repo good-wine/urlcleansebot \
+  -p "url_cleanse_bot" -p "url_cleanse_bot.sig" -p "url_cleanse_bot.pem"
+
+# Verify the binary
+cosign verify-blob \
+  --certificate url_cleanse_bot.pem \
+  --signature url_cleanse_bot.sig \
+  --certificate-identity-regexp "https://github.com/good-wine/urlcleansebot/.github/workflows/.*" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  url_cleanse_bot
+```
+
+### Verify SBOM Files (from GitHub Releases)
+
+```bash
+# Download SBOM and signatures
+gh release download v0.2.0 --repo good-wine/urlcleansebot \
+  -p "sbom.spdx.json" -p "sbom.spdx.json.sig" -p "sbom.spdx.json.pem" \
+  -p "sbom.cyclonedx.json" -p "sbom.cyclonedx.json.sig" -p "sbom.cyclonedx.json.pem"
+
+# Verify SPDX SBOM
+cosign verify-blob \
+  --certificate sbom.spdx.json.pem \
+  --signature sbom.spdx.json.sig \
+  --certificate-identity-regexp "https://github.com/good-wine/urlcleansebot/.github/workflows/.*" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  sbom.spdx.json
+
+# Verify CycloneDX SBOM
+cosign verify-blob \
+  --certificate sbom.cyclonedx.json.pem \
+  --signature sbom.cyclonedx.json.sig \
+  --certificate-identity-regexp "https://github.com/good-wine/urlcleansebot/.github/workflows/.*" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  sbom.cyclonedx.json
+```
+
+### Verify Provenance (from GitHub Releases)
+
+```bash
+gh release download v0.2.0 --repo good-wine/urlcleansebot \
+  -p "provenance.intoto.jsonl" -p "provenance.intoto.jsonl.sig" -p "provenance.intoto.jsonl.pem"
+
+cosign verify-blob \
+  --certificate provenance.intoto.jsonl.pem \
+  --signature provenance.intoto.jsonl.sig \
+  --certificate-identity-regexp "https://github.com/good-wine/urlcleansebot/.github/workflows/.*" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  provenance.intoto.jsonl
+```
+
+### Verify Checksums (from GitHub Releases)
+
+```bash
+gh release download v0.2.0 --repo good-wine/urlcleansebot \
+  -p "checksums.txt" -p "checksums.txt.sig" -p "checksums.txt.pem"
+
+cosign verify-blob \
+  --certificate checksums.txt.pem \
+  --signature checksums.txt.sig \
+  --certificate-identity-regexp "https://github.com/good-wine/urlcleansebot/.github/workflows/.*" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  checksums.txt
+
+# Then verify the checksums match
+sha256sum -c checksums.txt
+```
+
+## Key Information
+
+- **Certificate Identity Pattern**: `https://github.com/good-wine/urlcleansebot/.github/workflows/*`
+- **OIDC Issuer**: `https://token.actions.githubusercontent.com`
+- **Registry**: `ghcr.io/good-wine/urlcleansebot`
+- **Signing Method**: Keyless (GitHub Actions OIDC)
+
+## Why Keyless?
+
+Keyless signing eliminates private key management:
+- No long-lived private keys to rotate or compromise
+- Each signature is bound to a specific workflow run
+- Full audit trail via GitHub Actions logs
+- Short-lived certificates (valid ~10 minutes)
+- Transparency log (Rekor) entry for each signature
+
+## If You Need a Static Public Key
+
+For environments that require a static public key, you can extract it from a certificate:
+
+```bash
+# Extract public key from a certificate
+openssl x509 -in url_cleanse_bot.pem -pubkey -noout > cosign.pub
+```
+
+However, **keyless verification with certificate identity is strongly preferred** as it provides stronger supply chain guarantees.

@@ -117,7 +117,7 @@ proptest! {
 proptest! {
     #[test]
     fn sanitizer_preserves_path_and_host(
-        host in "[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}",
+        host in r"[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
         path in "(/[a-zA-Z0-9/._-]*)?",
         params in proptest::collection::vec(("[a-zA-Z][a-zA-Z0-9_]{0,10}", "[a-zA-Z0-9_]{0,20}"), 0..5),
     ) {
@@ -137,9 +137,9 @@ proptest! {
             let engine = make_engine().await;
             let result = engine.sanitize(&full_url, &[], &[]);
 
-            // The host should always be preserved
+            // The host should always be preserved (normalize lowercases hostname)
             if let Some((cleaned, _)) = result {
-                assert!(cleaned.contains(&host),
+                assert!(cleaned.to_lowercase().contains(&host.to_lowercase()),
                     "Host should be preserved: {cleaned} vs original host {host}");
             }
         });

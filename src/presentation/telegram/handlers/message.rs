@@ -110,7 +110,7 @@ pub async fn handle_message(
     };
 
     if msg_text.starts_with('/')
-        && let Err(err) = command_dispatcher::dispatch_command(text, &command_ctx).await
+        && let Err(err) = command_dispatcher::dispatch_command(text, &command_ctx, msg_clone.id).await
     {
         tracing::warn!(error = %err, "Errore nell'esecuzione del dispatcher comando");
         let _ = bot

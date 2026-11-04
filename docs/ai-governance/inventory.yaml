@@ -1,0 +1,250 @@
+# AI System Inventory — URLCleanseBot
+# Format: YAML for machine readability (registries, tooling, audit)
+# Version: 1.0.0
+# Updated: 2026-11-04
+# Governance Owner: URLCleanseBot Maintainers
+
+inventory_version: "1.0"
+last_updated: "2026-11-04"
+governance_owner: "URLCleanseBot Maintainers"
+contact: "github.com/urlcleansebot/urlcleansebot/issues"
+
+systems:
+  - system_id: "urlcleansebot-ai-engine"
+    name: "URLCleanseBot AI Engine"
+    description: |
+      Optional LLM-based URL sanitization component for edge-case tracking parameter removal.
+      Activated only when AI_API_KEY is configured and user has enabled "AI Deep Scan".
+      Receives pre-processed URLs (rule engine + entropy filter output).
+      Single-turn, stateless inference via OpenAI-compatible API.
+      No training, fine-tuning, or model hosting by URLCleanseBot.
+
+    # === CLASSIFICATION ===
+    classification:
+      ai_system: true
+      ai_act_risk_tier: "minimal"  # unacceptable | high | limited | minimal
+      ai_act_role: "deployer"      # provider | deployer | importer | distributor | authorized_representative
+      gpai_consumer: true          # consumes GPAI via API
+      gpai_provider: false
+      adaptiveness: false          # no online learning, no fine-tuning, frozen model
+      autonomy_level: "low"        # low | medium | high (Art. 3 Recital 12)
+      decision_making: true        # decides which params to remove
+      human_in_the_loop: true      # opt-in gate + fallback to rule-based
+      human_on_the_loop: false     # no real-time oversight during inference
+      human_in_command: true       # deployer controls config, can disable instantly
+
+    # === TECHNICAL SPECIFICATION ===
+    technical:
+      model:
+        name: "Configurable via AI_MODEL"
+        default: "gpt-3.5-turbo"
+        version_pinning: "Recommended: dated snapshot (e.g., gpt-3.5-turbo-0125)"
+        architecture: "Provider-dependent (Transformer, decoder-only)"
+        modality: "text-to-text"
+        task: "parameter_extraction_and_removal"
+        context_window: "Provider-dependent (default: 4k-128k tokens)"
+        temperature: 0
+        max_output_tokens: 256
+
+      deployment:
+        type: "external_api_inference"
+        api_base: "Configurable via AI_API_BASE"
+        default_endpoint: "https://api.openai.com/v1"
+        protocol: "OpenAI Chat Completions (POST /v1/chat/completions)"
+        authentication: "Bearer token (AI_API_KEY)"
+        timeout_seconds: 30
+        retry_policy: "None (fail-open → rule-based fallback)"
+        circuit_breaker: "Implicit via timeout"
+
+      data_flow:
+        input:
+          - source: "user_message"
+            type: "url_string"
+            pii_risk: "high (query params may contain emails, tokens, health data)"
+            pre_processing: ["rule_engine", "entropy_filter", "redaction_module"]
+            redaction_patterns: ["email", "jwt", "uuid", "bearer_token", "iban", "phone"]
+        output:
+          - type: "sanitized_url_string"
+            validation: "re-parse via url-sanitize-core; diff vs input; reject malformed"
+        logging:
+          url_content_logged: false
+          metadata_logged: ["latency_ms", "token_count_estimate", "success_bool", "user_id_hash"]
+          pii_in_logs: false
+
+      infrastructure:
+        compute: "provider_managed"
+        hosting_region: "depends on AI_API_BASE (default: US)"
+        tls_version: "1.2+"
+        network_egress: "outbound_https_only"
+
+    # === GOVERNANCE ===
+    governance:
+      owner: "URLCleanseBot Maintainers"
+      dpo: "Per deployment configuration"
+      legal_counsel: "Per deployment configuration"
+      approved_date: "2026-11-04"
+      review_cycle: "annual"
+      next_review: "2027-11-04"
+
+      documentation:
+        model_card: "docs/ai-governance/model-card.md"
+        dpia: "docs/ai-governance/dpia.md"
+        risk_tier: "docs/ai-governance/risk-tier.md"
+        architecture: "docs/ARCHITECTURE.md#sanitizer"
+        source_code: "src/sanitizer/ai_engine.rs"
+
+      policies:
+        - name: "AI Usage Policy"
+          reference: "model-card.md#intended-use"
+        - name: "Data Processing Agreement Template"
+          reference: "dpia.md#contractual-measures"
+        - name: "Incident Response"
+          reference: "SECURITY.md"
+        - name: "Vendor Assessment"
+          reference: "dpia.md#organizational-measures"
+
+    # === COMPLIANCE ===
+    compliance:
+      eu_ai_act:
+        applicable: true
+        risk_tier: "minimal"
+        transparency_obligation_art50: true
+        high_risk_requirements: "not_applicable"
+        gpai_obligations: "provider_responsibility"
+        documentation_art11: "voluntary (model-card.md)"
+        registration: "not_required"
+
+      gdpr:
+        dpia_required: true
+        dpia_reference: "docs/ai-governance/dpia.md"
+        lawful_basis:
+          core_pipeline: "legitimate_interest (Art. 6.1.f)"
+          ai_path: "explicit_consent (Art. 6.1.a + Art. 7)"
+        data_minimization: true
+        purpose_limitation: true
+        storage_limitation: "transient_only"
+        dpia_art35: true
+        dpa_art28: "required_with_provider"
+        transfer_safeguards: "scc_or_adequacy_or_eu_endpoint"
+        data_subject_rights: ["access", "rectification", "erasure", "objection", "portability"]
+        records_art30: true
+
+      iso_42001:
+        scope: "AI Engine inference path only"
+        controls_implemented:
+          - "A.6.1 AI Policy"
+          - "A.6.2 AI Objectives"
+          - "A.7.1 AI Risk Assessment Process"
+          - "A.7.2 AI Risk Treatment Process"
+          - "A.7.3 AI Impact Assessment"
+          - "A.8.1 AI System Documentation"
+          - "A.9.1 AI System Development"
+          - "A.9.2 AI System Verification/Validation"
+          - "A.9.3 AI System Deployment"
+          - "A.9.4 AI System Operation/Monitoring"
+          - "A.10.1 AI System Lifecycle Management"
+          - "A.10.2 AI System Change Management"
+        certification: "not_pursued"
+        internal_audit: "annual"
+
+    # === RISK ===
+    risk:
+      assessment_date: "2026-11-04"
+      methodology: "DPIA + AI Act Annex III mapping + ISO 42001 A.7"
+      residual_risks:
+        - id: "R1"
+          title: "PII egress to AI provider"
+          level: "medium"
+          treatment: "pre_redaction + opt_in + dpa + eu_endpoint_option"
+        - id: "R2"
+          title: "Provider retains data for training"
+          level: "low-medium"
+          treatment: "contractual_zero_retention + provider_policy_verification"
+        - id: "R3"
+          title: "Cross-border transfer to inadequate country"
+          level: "low"
+          treatment: "configurable_eu_endpoint + scc_fallback"
+        - id: "R4"
+          title: "Model drift / provider update without notice"
+          level: "low"
+          treatment: "version_pinning + quarterly_re_eval"
+
+    # === METRICS & MONITORING ===
+    monitoring:
+      metrics:
+        - name: "tracking_removal_precision"
+          target: ">= 95%"
+          frequency: "per_release + quarterly_human_eval"
+        - name: "tracking_removal_recall"
+          target: ">= 90%"
+          frequency: "per_release"
+        - name: "false_positive_rate"
+          target: "<= 2%"
+          frequency: "per_release + user_reports"
+        - name: "latency_p95"
+          target: "<= 5s"
+          frequency: "continuous (OpenTelemetry)"
+        - name: "error_rate"
+          target: "<= 1%"
+          frequency: "continuous"
+        - name: "cost_per_1k_requests"
+          target: "budget_defined"
+          frequency: "monthly"
+
+      alerts:
+        - name: "ai_latency_spike"
+          condition: "p95 > 10s for 5min"
+          action: "page_oncall"
+        - name: "ai_error_rate_high"
+          condition: "error_rate > 5% for 5min"
+          action: "page_oncall + auto_disable_ai_flag"
+        - name: "cost_anomaly"
+          condition: "daily_cost > 2x baseline"
+          action: "notify_finance + investigate"
+
+    # === LIFECYCLE ===
+    lifecycle:
+      status: "production"  # design | development | testing | production | deprecated | retired
+      version: "1.0.0"
+      deployed_at: "2026-11-04"
+      change_management:
+        model_update_process: "pin_to_dated_snapshot; re_run_golden_set; update_model_card; deploy_via_pr"
+        config_changes: "AI_MODEL, AI_API_BASE, AI_API_KEY via env; no code deploy needed"
+        deprecation_plan: "unset AI_API_KEY → immediate fallback to rule-based"
+
+    # === VENDOR ===
+    vendor:
+      primary:
+        name: "OpenAI (default)"
+        entity: "OpenAI, LLC / OpenAI OpCo, LLC"
+        location: "San Francisco, CA, USA"
+        endpoint: "https://api.openai.com/v1"
+        dpa_status: "required_before_production"
+        scc_status: "required_if_us_endpoint"
+        sub_processors: "disclosed_in_dpa"
+        retention_policy: "30_days_abuse_monitoring (standard); 0_days (enterprise/zero-retention)"
+        certifications: ["SOC 2 Type II", "ISO 27001"]
+        model_card_available: "https://platform.openai.com/docs/models"
+        system_card_available: "https://openai.com/research/gpt-4-system-card"
+
+      alternative:
+        - name: "Azure OpenAI"
+          endpoint: "https://{resource}.openai.azure.com"
+          region: "EU regions available"
+          dpa: "Microsoft DPA"
+        - name: "Self-hosted (vLLM, TGI, Ollama)"
+          endpoint: "https://internal-gpu-cluster/v1"
+          control: "full"
+        - name: "Other OpenAI-compatible"
+          note: "Document provider-specific details in model-card.md Appendix"
+
+# === REGISTRY METADATA ===
+registry:
+  format_version: "1.0"
+  schema_reference: "https://github.com/urlcleansebot/urlcleansebot/blob/main/docs/ai-governance/inventory.schema.json"
+  maintained_by: "URLCleanseBot Maintainers"
+  source_of_truth: "this file (inventory.yaml)"
+  sync_targets:
+    - "internal_cmdb"
+    - "compliance_tooling"
+    - "audit_evidence_package"

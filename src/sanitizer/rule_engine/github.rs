@@ -12,7 +12,7 @@ pub fn clean_github_url(url: &mut Url) -> bool {
         if path_segments.len() > 2 {
             let owner = &path_segments[0];
             let repo = &path_segments[1];
-            let new_path = format!("/{}/{}", owner, repo);
+            let new_path = format!("/{owner}/{repo}");
             if url.path() != new_path {
                 url.set_path(&new_path);
                 url.set_query(None);

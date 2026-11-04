@@ -1,0 +1,445 @@
+groups:
+  # ═══════════════════════════════════════════════════════════════════
+  # URLCleanseBot — Burn-Rate Alerts (Multi-Window, Multi-Burn-Rate)
+  # ═══════════════════════════════════════════════════════════════════
+  - name: urlcleansebot.burn-rate
+    interval: 30s
+    rules:
+      # Fast burn: 2% budget in 1h → 14.4x normal error rate (page)
+      - alert: URLCleanseBotFastBurnRate
+        expr: |
+          (
+            sum(rate(urlcleansebot_requests_total{status=~"5..|timeout"}[1h]))
+            /
+            sum(rate(urlcleansebot_requests_total[1h]))
+          )
+          /
+          (1 - 0.995)
+          > 14.4
+        for: 2m
+        labels:
+          severity: critical
+          slo: availability
+          burn_rate: fast
+          runbook: "docs/runbooks/high-error-rate.md"
+        annotations:
+          summary: "URLCleanseBot fast burn-rate (2% error budget in 1h)"
+          description: |
+            Error rate is consuming error budget at 14.4x normal rate.
+            Current 1h error rate: {{ printf "%.2f" ($value * 100) }}% of budget.
+            SLO: Availability ≥ 99.5% (30d rolling).
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/high-error-rate.md
+
+      # Medium burn: 5% budget in 6h → 6x normal error rate (ticket)
+      - alert: URLCleanseBotMediumBurnRate
+        expr: |
+          (
+            sum(rate(urlcleansebot_requests_total{status=~"5..|timeout"}[6h]))
+            /
+            sum(rate(urlcleansebot_requests_total[6h]))
+          )
+          /
+          (1 - 0.995)
+          > 6
+        for: 5m
+        labels:
+          severity: warning
+          slo: availability
+          burn_rate: medium
+          runbook: "docs/runbooks/high-error-rate.md"
+        annotations:
+          summary: "URLCleanseBot medium burn-rate (5% error budget in 6h)"
+          description: |
+            Error rate is consuming error budget at 6x normal rate.
+            Current 6h error rate: {{ printf "%.2f" ($value * 100) }}% of budget.
+            SLO: Availability ≥ 99.5% (30d rolling).
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/high-error-rate.md
+
+      # Slow burn: 10% budget in 3d → 3x normal error rate (investigation)
+      - alert: URLCleanseBotSlowBurnRate
+        expr: |
+          (
+            sum(rate(urlcleansebot_requests_total{status=~"5..|timeout"}[3d]))
+            /
+            sum(rate(urlcleansebot_requests_total[3d]))
+          )
+          /
+          (1 - 0.995)
+          > 3
+        for: 15m
+        labels:
+          severity: info
+          slo: availability
+          burn_rate: slow
+          runbook: "docs/runbooks/high-error-rate.md"
+        annotations:
+          summary: "URLCleanseBot slow burn-rate (10% error budget in 3d)"
+          description: |
+            Error rate is consuming error budget at 3x normal rate over 3 days.
+            Current 3d error rate: {{ printf "%.2f" ($value * 100) }}% of budget.
+            SLO: Availability ≥ 99.5% (30d rolling).
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/high-error-rate.md
+
+  # ═══════════════════════════════════════════════════════════════════
+  # URLCleanseBot — Symptom-Based Alerts (Error Rate, Latency, Queue, DB)
+  # ═══════════════════════════════════════════════════════════════════
+  - name: urlcleansebot.symptoms
+    interval: 30s
+    rules:
+      # High error rate (symptom, not cause)
+      - alert: URLCleanseBotHighErrorRate
+        expr: |
+          sum(rate(urlcleansebot_requests_total{status=~"5..|timeout"}[5m]))
+          /
+          sum(rate(urlcleansebot_requests_total[5m]))
+          > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          symptom: high_error_rate
+          runbook: "docs/runbooks/high-error-rate.md"
+        annotations:
+          summary: "URLCleanseBot high error rate (>5% over 5m)"
+          description: |
+            {{ printf "%.1f" ($value * 100) }}% of requests failing in last 5 minutes.
+            Check: Telegram API errors, sanitization panics, DB errors, AI API errors.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/high-error-rate.md
+
+      # High latency p95
+      - alert: URLCleanseBotHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(urlcleansebot_latency_seconds_bucket[5m]))
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          symptom: high_latency
+          slo: latency_p95
+          runbook: "docs/runbooks/high-latency.md"
+        annotations:
+          summary: "URLCleanseBot latency p95 > 2s (SLO breach)"
+          description: |
+            Current p95 latency: {{ printf "%.2f" $value }}s (SLO: ≤2s).
+            Check: Telegram API latency, sanitization pipeline, DB queries, AI calls.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/high-latency.md
+
+      # High latency p99
+      - alert: URLCleanseBotHighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(urlcleansebot_latency_seconds_bucket[5m]))
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          symptom: high_latency_p99
+          slo: latency_p99
+          runbook: "docs/runbooks/high-latency.md"
+        annotations:
+          summary: "URLCleanseBot latency p99 > 5s (SLO breach)"
+          description: |
+            Current p99 latency: {{ printf "%.2f" $value }}s (SLO: ≤5s).
+            Investigate tail latency causes: GC pauses, slow DB, AI timeouts.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/high-latency.md
+
+      # Queue depth (webhook pending updates)
+      - alert: URLCleanseBotQueueDepth
+        expr: |
+          urlcleansebot_queue_depth > 100
+        for: 3m
+        labels:
+          severity: warning
+          symptom: queue_backlog
+          runbook: "docs/runbooks/queue-depth.md"
+        annotations:
+          summary: "URLCleanseBot webhook queue depth > 100"
+          description: |
+            Pending updates queue: {{ $value }} messages.
+            Bot may be processing slower than incoming rate.
+            Check: processing latency, DB contention, AI API latency.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/queue-depth.md
+
+      # DB pool exhaustion
+      - alert: URLCleanseBotDBPoolExhausted
+        expr: |
+          (
+            urlcleansebot_db_pool_usage{state="active"}
+            /
+            (urlcleansebot_db_pool_usage{state="active"} + urlcleansebot_db_pool_usage{state="idle"})
+          ) > 0.9
+        for: 2m
+        labels:
+          severity: critical
+          symptom: db_pool_exhaustion
+          runbook: "docs/runbooks/db-pool-exhausted.md"
+        annotations:
+          summary: "URLCleanseBot DB pool > 90% utilized"
+          description: |
+            Active connections: {{ $value | humanizePercentage }} of pool.
+            Risk: new requests will block waiting for connection.
+            Check: long-running queries, connection leaks, pool size config.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/db-pool-exhausted.md
+
+      # Rule fetch failures
+      - alert: URLCleanseBotRuleFetchFailing
+        expr: |
+          sum(rate(urlcleansebot_rule_fetch_total{status="error"}[15m]))
+          /
+          sum(rate(urlcleansebot_rule_fetch_total[15m]))
+          > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          symptom: rule_fetch_failure
+          runbook: "docs/runbooks/rule-fetch-failure.md"
+        annotations:
+          summary: "URLCleanseBot rule fetch failing (>50% error rate)"
+          description: |
+            ClearURLs or Linkumori rule download failing.
+            Sanitization quality may degrade over time.
+            Check: network, upstream availability, TLS certs.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/rule-fetch-failure.md
+
+  # ═══════════════════════════════════════════════════════════════════
+  # URLCleanseBot — AI-Specific Alerts
+  # ═══════════════════════════════════════════════════════════════════
+  - name: urlcleansebot.ai
+    interval: 60s
+    rules:
+      # AI API high error rate
+      - alert: URLCleanseBotAIHighErrorRate
+        expr: |
+          sum(rate(urlcleansebot_ai_requests_total{status=~"error|timeout"}[5m]))
+          /
+          sum(rate(urlcleansebot_ai_requests_total[5m]))
+          > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          component: ai
+          slo: ai_availability
+          runbook: "docs/runbooks/ai-high-error-rate.md"
+        annotations:
+          summary: "URLCleanseBot AI API error rate > 10%"
+          description: |
+            AI requests failing: {{ printf "%.1f" ($value * 100) }}% (error + timeout).
+            Fallback to rule-based engine active.
+            Check: AI provider status, API key, rate limits, model availability.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/ai-high-error-rate.md
+
+      # AI latency spike
+      - alert: URLCleanseBotAILatencySpike
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(urlcleansebot_ai_latency_seconds_bucket[5m]))
+          ) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: ai
+          slo: ai_latency_p95
+          runbook: "docs/runbooks/ai-latency-spike.md"
+        annotations:
+          summary: "URLCleanseBot AI latency p95 > 10s (SLO breach)"
+          description: |
+            Current AI p95 latency: {{ printf "%.1f" $value }}s (SLO: ≤10s).
+            User-visible delay in replies using AI sanitization.
+            Check: provider load, model size, network, timeout config.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/ai-latency-spike.md
+
+      # AI fallback rate high (quality degradation)
+      - alert: URLCleanseBotAIFallbackRateHigh
+        expr: |
+          sum(rate(urlcleansebot_ai_fallback_total[15m]))
+          /
+          sum(rate(urlcleansebot_ai_requests_total[15m]))
+          > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          component: ai
+          slo: ai_fallback_rate
+          runbook: "docs/runbooks/ai-fallback-rate.md"
+        annotations:
+          summary: "URLCleanseBot AI fallback rate > 10%"
+          description: |
+            {{ printf "%.1f" ($value * 100) }}% of AI requests falling back to rule engine.
+            Indicates AI quality or reliability issues.
+            Check: AI error rate, latency, provider changes.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/ai-fallback-rate.md
+
+      # AI cost anomaly (daily spend > 2x 7d average)
+      - alert: URLCleanseBotAICostAnomaly
+        expr: |
+          (
+            sum(increase(urlcleansebot_ai_cost_usd_total[1d]))
+            /
+            avg_over_time(sum(increase(urlcleansebot_ai_cost_usd_total[1d]))[7d:1d])
+          ) > 2
+        for: 1h
+        labels:
+          severity: info
+          component: ai
+          runbook: "docs/runbooks/ai-cost-anomaly.md"
+        annotations:
+          summary: "URLCleanseBot AI daily cost > 2x 7-day average"
+          description: |
+            Daily AI cost: ${{ printf "%.2f" (sum(increase(urlcleansebot_ai_cost_usd_total[1d]))) }}.
+            7-day average: ${{ printf "%.2f" (avg_over_time(sum(increase(urlcleansebot_ai_cost_usd_total[1d]))[7d:1d])) }}.
+            Check: traffic spike, model change, prompt injection, billing error.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/ai-cost-anomaly.md
+
+  # ═══════════════════════════════════════════════════════════════════
+  # URLCleanseBot — Infrastructure Alerts
+  # ═══════════════════════════════════════════════════════════════════
+  - name: urlcleansebot.infra
+    interval: 60s
+    rules:
+      # Container restarted
+      - alert: URLCleanseBotContainerRestart
+        expr: |
+          increase(urlcleansebot_container_restarts_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          component: infra
+          runbook: "docs/runbooks/container-restart.md"
+        annotations:
+          summary: "URLCleanseBot container restarted"
+          description: |
+            Container restarted {{ $value }} time(s) in last 5 minutes.
+            Check: OOM kill, crash, health check failure, deploy.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/container-restart.md
+
+      # OOM kill
+      - alert: URLCleanseBotOOMKill
+        expr: |
+          increase(container_oom_events_total{container="url_cleanse_bot"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: infra
+          runbook: "docs/runbooks/oom-kill.md"
+        annotations:
+          summary: "URLCleanseBot OOM kill detected"
+          description: |
+            Container killed by OOM killer.
+            Memory limit: 512M (see compose.yml).
+            Check: memory leaks, large payloads, GC config.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/oom-kill.md
+
+      # Memory usage high (>85% of limit)
+      - alert: URLCleanseBotHighMemoryUsage
+        expr: |
+          (urlcleansebot_memory_usage_bytes / 536870912) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          component: infra
+          runbook: "docs/runbooks/high-memory.md"
+        annotations:
+          summary: "URLCleanseBot memory usage > 85% of limit (512M)"
+          description: |
+            Current usage: {{ printf "%.0f" ($value * 100) }}% of 512M limit.
+            Approaching OOM risk.
+            Check: memory growth trend, cache sizes, connection pools.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/high-memory.md
+
+      # Disk space critical
+      - alert: URLCleanseBotDiskFull
+        expr: |
+          (urlcleansebot_disk_usage_bytes / urlcleansebot_disk_total_bytes) > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          component: infra
+          runbook: "docs/runbooks/disk-full.md"
+        annotations:
+          summary: "URLCleanseBot disk usage > 90%"
+          description: |
+            Disk usage: {{ printf "%.1f" ($value * 100) }}%.
+            Risk: DB corruption, log write failures, container restart failure.
+            Check: log rotation, DB vacuum, old images, backup retention.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/disk-full.md
+
+      # TLS certificate expiring soon (< 14 days)
+      - alert: URLCleanseBotCertExpiry
+        expr: |
+          urlcleansebot_tls_cert_expiry_seconds < 1209600
+        for: 1h
+        labels:
+          severity: warning
+          component: infra
+          runbook: "docs/runbooks/cert-expiry.md"
+        annotations:
+          summary: "URLCleanseBot TLS certificate expires in < 14 days"
+          description: |
+            Certificate expires in {{ printf "%.0f" ($value / 86400) }} days.
+            Webhook endpoint will become unreachable after expiry.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/cert-expiry.md
+
+      # CPU throttling (container hitting CPU limit)
+      - alert: URLCleanseBotCPUThrottling
+        expr: |
+          (rate(container_cpu_cfs_throttled_periods_total{container="url_cleanse_bot"}[5m])
+           /
+           rate(container_cpu_cfs_periods_total{container="url_cleanse_bot"}[5m])) > 0.25
+        for: 10m
+        labels:
+          severity: warning
+          component: infra
+          runbook: "docs/runbooks/cpu-throttling.md"
+        annotations:
+          summary: "URLCleanseBot CPU throttling > 25%"
+          description: |
+            Container throttled {{ printf "%.1f" ($value * 100) }}% of CPU periods.
+            CPU limit: 0.5 cores (see compose.yml).
+            Check: sanitization complexity, regex performance, AI preprocessing.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/cpu-throttling.md
+
+  # ═══════════════════════════════════════════════════════════════════
+  # URLCleanseBot — Correctness / Quality Alerts
+  # ═══════════════════════════════════════════════════════════════════
+  - name: urlcleansebot.correctness
+    interval: 300s
+    rules:
+      # Correctness ratio below SLO
+      - alert: URLCleanseBotCorrectnessBelowSLO
+        expr: |
+          (
+            sum(rate(urlcleansebot_sanitizations_cleaned_total[1h]))
+            /
+            sum(rate(urlcleansebot_sanitizations_total[1h]))
+          ) < 0.99
+        for: 15m
+        labels:
+          severity: warning
+          slo: correctness
+          runbook: "docs/runbooks/correctness-degradation.md"
+        annotations:
+          summary: "URLCleanseBot correctness ratio < 99% (SLO breach)"
+          description: |
+            Current correctness: {{ printf "%.2f" ($value * 100) }}% (SLO: ≥99%).
+            Tracking parameters not fully removed or false positives.
+            Check: rule freshness, new tracking patterns, regex regressions.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/correctness-degradation.md
+
+      # Sanitization failure rate spike
+      - alert: URLCleanseBotSanitizationFailures
+        expr: |
+          sum(rate(urlcleansebot_sanitizations_total{result="failed"}[5m]))
+          /
+          sum(rate(urlcleansebot_sanitizations_total[5m]))
+          > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          slo: correctness
+          runbook: "docs/runbooks/sanitization-failures.md"
+        annotations:
+          summary: "URLCleanseBot sanitization failure rate > 1%"
+          description: |
+            {{ printf "%.2f" ($value * 100) }}% of sanitizations failing.
+            May indicate panics, malformed URLs, or rule engine errors.
+            Runbook: https://github.com/your-org/urlcleansebot/blob/main/docs/runbooks/sanitization-failures.md

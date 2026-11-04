@@ -106,7 +106,7 @@ impl RuleEngine {
 
         let mut url_to_parse = text.to_string();
         if !url_to_parse.contains("://") && !url_to_parse.starts_with("mailto:") {
-            url_to_parse = format!("http://{}", url_to_parse);
+            url_to_parse = format!("http://{url_to_parse}");
         }
 
         if let Ok(mut url) = Url::parse(&url_to_parse) {
@@ -314,7 +314,7 @@ impl RuleEngine {
                         if let Some(fragment) = url.fragment()
                             && fragment.contains('=')
                         {
-                            let frag_url_str = format!("http://localhost?{}", fragment);
+                            let frag_url_str = format!("http://localhost?{fragment}");
                             if let Ok(mut frag_url) = Url::parse(&frag_url_str)
                                 && self.clean_url_in_place(&mut frag_url)
                             {

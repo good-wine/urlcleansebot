@@ -4,7 +4,7 @@
 //! that centralizes all command routing logic.
 
 use teloxide::prelude::*;
-use teloxide::types::ChatId;
+use teloxide::types::{ChatId, MessageId, ReplyParameters};
 use tracing::{debug, warn};
 
 use crate::config::Config;
@@ -195,7 +195,7 @@ impl Command {
 
 /// Main dispatcher for command routing.
 /// Handles command parsing, rate limiting, and execution.
-pub async fn dispatch_command(text: &str, ctx: &CommandContext) -> AppResult<bool> {
+pub async fn dispatch_command(text: &str, ctx: &CommandContext, msg_id: MessageId) -> AppResult<bool> {
     if let Some((cmd, args)) = Command::parse_with_args(text) {
         debug!(command = %cmd.name(), user_id = ctx.user_id, "Esecuzione comando");
 
@@ -204,6 +204,7 @@ pub async fn dispatch_command(text: &str, ctx: &CommandContext) -> AppResult<boo
             let _ = ctx
                 .bot
                 .send_message(ctx.chat_id, "⏱️ Troppe richieste. Attendi qualche secondo.")
+                .reply_parameters(ReplyParameters::new(msg_id))
                 .await;
             return Ok(true);
         }
@@ -213,6 +214,7 @@ pub async fn dispatch_command(text: &str, ctx: &CommandContext) -> AppResult<boo
             let _ = ctx
                 .bot
                 .send_message(ctx.chat_id, ctx.tr.cmd_exec_error)
+                .reply_parameters(ReplyParameters::new(msg_id))
                 .await;
         }
 

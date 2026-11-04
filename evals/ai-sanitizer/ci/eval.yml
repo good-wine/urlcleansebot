@@ -1,0 +1,268 @@
+name: AI Sanitizer Evaluation
+
+on:
+  pull_request:
+    paths:
+      - 'src/sanitizer/ai_engine.rs'
+      - 'evals/ai-sanitizer/**'
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/sanitizer/ai_engine.rs'
+      - 'evals/ai-sanitizer/**'
+  schedule:
+    - cron: '0 2 * * *'  # Nightly at 2 AM UTC
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: 'Dataset to evaluate'
+        required: false
+        default: 'golden_set'
+        type: choice
+        options:
+          - golden_set
+          - edge_cases
+          - regression
+          - adversarial
+          - all
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+env:
+  AI_API_KEY: ${{ secrets.AI_API_KEY }}
+  AI_API_BASE: ${{ secrets.AI_API_BASE }}
+  AI_MODEL: ${{ secrets.AI_MODEL }}
+
+jobs:
+  evaluate:
+    name: Evaluate AI Sanitizer
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install eval harness
+        run: |
+          cd evals/ai-sanitizer/harness
+          cargo build --release
+
+      - name: Validate datasets
+        run: |
+          cd evals/ai-sanitizer/harness
+          cargo run --release -- validate --dataset ../dataset/golden_set.jsonl
+          cargo run --release -- validate --dataset ../dataset/edge_cases.jsonl
+          cargo run --release -- validate --dataset ../dataset/regression.jsonl
+          cargo run --release -- validate --dataset ../dataset/adversarial.jsonl
+
+      - name: Run evaluation - Golden Set
+        if: github.event.inputs.dataset == 'golden_set' || github.event.inputs.dataset == 'all' || github.event_name != 'workflow_dispatch'
+        run: |
+          cd evals/ai-sanitizer/harness
+          cargo run --release -- run \
+            --config ../config.toml \
+            --dataset ../dataset/golden_set.jsonl \
+            --output golden_set_result.json \
+            --concurrency 5 \
+            --judge
+
+      - name: Run evaluation - Edge Cases
+        if: github.event.inputs.dataset == 'edge_cases' || github.event.inputs.dataset == 'all' || github.event_name != 'workflow_dispatch'
+        run: |
+          cd evals/ai-sanitizer/harness
+          cargo run --release -- run \
+            --config ../config.toml \
+            --dataset ../dataset/edge_cases.jsonl \
+            --output edge_cases_result.json \
+            --concurrency 5 \
+            --judge
+
+      - name: Run evaluation - Regression
+        if: github.event.inputs.dataset == 'regression' || github.event.inputs.dataset == 'all' || github.event_name != 'workflow_dispatch'
+        run: |
+          cd evals/ai-sanitizer/harness
+          cargo run --release -- run \
+            --config ../config.toml \
+            --dataset ../dataset/regression.jsonl \
+            --output regression_result.json \
+            --concurrency 5 \
+            --judge
+
+      - name: Run evaluation - Adversarial
+        if: github.event.inputs.dataset == 'adversarial' || github.event.inputs.dataset == 'all' || github.event_name != 'workflow_dispatch'
+        run: |
+          cd evals/ai-sanitizer/harness
+          cargo run --release -- run \
+            --config ../config.toml \
+            --dataset ../dataset/adversarial.jsonl \
+            --output adversarial_result.json \
+            --concurrency 5 \
+            --judge
+
+      - name: Run Regression Gate - Golden Set
+        if: github.event.inputs.dataset == 'golden_set' || github.event.inputs.dataset == 'all' || github.event_name != 'workflow_dispatch'
+        id: gate_golden
+        run: |
+          cd evals/ai-sanitizer/harness
+          cargo run --release -- gate \
+            --config ../config.toml \
+            --result golden_set_result.json \
+            --output gate_golden_result.json \
+            --format markdown
+          echo "GATE_OUTPUT<<EOF" >> $GITHUB_OUTPUT
+          cat gate_golden_result.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Run Regression Gate - Edge Cases
+        if: github.event.inputs.dataset == 'edge_cases' || github.event.inputs.dataset == 'all' || github.event_name != 'workflow_dispatch'
+        id: gate_edge
+        run: |
+          cd evals/ai-sanitizer/harness
+          cargo run --release -- gate \
+            --config ../config.toml \
+            --result edge_cases_result.json \
+            --output gate_edge_result.json \
+            --format markdown
+          echo "GATE_OUTPUT<<EOF" >> $GITHUB_OUTPUT
+          cat gate_edge_result.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Run Regression Gate - Regression
+        if: github.event.inputs.dataset == 'regression' || github.event.inputs.dataset == 'all' || github.event_name != 'workflow_dispatch'
+        id: gate_regression
+        run: |
+          cd evals/ai-sanitizer/harness
+          cargo run --release -- gate \
+            --config ../config.toml \
+            --result regression_result.json \
+            --output gate_regression_result.json \
+            --format markdown
+          echo "GATE_OUTPUT<<EOF" >> $GITHUB_OUTPUT
+          cat gate_regression_result.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Run Regression Gate - Adversarial
+        if: github.event.inputs.dataset == 'adversarial' || github.event.inputs.dataset == 'all' || github.event_name != 'workflow_dispatch'
+        id: gate_adversarial
+        run: |
+          cd evals/ai-sanitizer/harness
+          cargo run --release -- gate \
+            --config ../config.toml \
+            --result adversarial_result.json \
+            --output gate_adversarial_result.json \
+            --format markdown
+          echo "GATE_OUTPUT<<EOF" >> $GITHUB_OUTPUT
+          cat gate_adversarial_result.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Upload evaluation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-results
+          path: |
+            evals/ai-sanitizer/harness/*_result.json
+            evals/ai-sanitizer/harness/gate_*_result.json
+            evals/ai-sanitizer/harness/gate_*_result.md
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const results = [];
+            
+            const files = [
+              'evals/ai-sanitizer/harness/gate_golden_result.md',
+              'evals/ai-sanitizer/harness/gate_edge_result.md',
+              'evals/ai-sanitizer/harness/gate_regression_result.md',
+              'evals/ai-sanitizer/harness/gate_adversarial_result.md'
+            ];
+            
+            let comment = '## 🧪 AI Sanitizer Evaluation Results\n\n';
+            
+            for (const file of files) {
+              try {
+                const content = fs.readFileSync(file, 'utf8');
+                if (content.trim()) {
+                  comment += content + '\n\n---\n\n';
+                }
+              } catch (e) {
+                // File might not exist
+              }
+            }
+            
+            comment += '*Generated by AI Evaluation Harness*';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Fail on gate failure
+        if: failure()
+        run: |
+          echo "❌ Evaluation gate failed. Check artifacts for details."
+          exit 1
+
+  redteam:
+    name: Red Team Evaluation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install eval harness
+        run: |
+          cd evals/ai-sanitizer/harness
+          cargo build --release
+
+      - name: Run red-team evaluation
+        run: |
+          cd evals/ai-sanitizer/harness
+          cargo run --release -- redteam \
+            --config ../config.toml \
+            --dataset ../dataset/adversarial.jsonl \
+            --output redteam_result.json \
+            --concurrency 3
+
+      - name: Upload red-team results
+        uses: actions/upload-artifact@v4
+        with:
+          name: redteam-results
+          path: evals/ai-sanitizer/harness/redteam_result.json
+
+      - name: Check attack success rate
+        run: |
+          cd evals/ai-sanitizer/harness
+          # Check if attack success rate is 0%
+          ATTACK_RATE=$(jq -r '.attack_success_rate' redteam_result.json)
+          if (( $(echo "$ATTACK_RATE > 0" | bc -l) )); then
+            echo "❌ Red team attack success rate: $ATTACK_RATE (must be 0%)"
+            exit 1
+          else
+            echo "✅ Red team attack success rate: $ATTACK_RATE"
+          fi

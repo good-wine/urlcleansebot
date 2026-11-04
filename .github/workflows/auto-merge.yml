@@ -1,0 +1,101 @@
+# ──────────────────────────────────────────────────────────────
+# Auto-merge Dependabot PRs
+# Auto-merges Dependabot PRs when CI passes and commit is conventional
+# ──────────────────────────────────────────────────────────────
+name: Auto Merge Dependabot
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Auto Merge Dependabot PR
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Check labels
+        id: labels
+        run: |
+          HAS_DEPENDENCIES=false
+          HAS_AUTOMERGE=false
+          
+          for label in "${{ join(github.event.pull_request.labels.*.name, ' ') }}"; do
+            if [ "$label" = "dependencies" ]; then
+              HAS_DEPENDENCIES=true
+            fi
+            if [ "$label" = "automerge" ]; then
+              HAS_AUTOMERGE=true
+            fi
+          done
+          
+          echo "has_dependencies=$HAS_DEPENDENCIES" >> $GITHUB_OUTPUT
+          echo "has_automerge=$HAS_AUTOMERGE" >> $GITHUB_OUTPUT
+
+      - name: Add labels if missing
+        if: steps.labels.outputs.has_dependencies == 'false' || steps.labels.outputs.has_automerge == 'false'
+        run: |
+          gh pr edit ${{ github.event.pull_request.number }} --add-label dependencies automerge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for CI to complete
+        uses: fountainhead/action-wait-for-check@master
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          check-name: |
+            Commit Lint
+            Build
+            Test
+          wait-interval: 30
+          timeout-minutes: 30
+
+      - name: Validate commit message (conventional commits)
+        run: |
+          # Get the commit message from the PR
+          COMMITS=$(git log --oneline --no-merges origin/${{ github.base_ref }}..HEAD --format="%H")
+          
+          FAILED=0
+          for commit in $COMMITS; do
+            MESSAGE=$(git log --format=%B -n 1 $commit)
+            
+            # Check conventional commit format
+            if ! echo "$MESSAGE" | grep -qE '^(feat|fix|docs|refactor|test|chore|perf|security|ci|build|revert|style)(\(.+\))?!: .+'; then
+              echo "❌ Commit $commit does not follow Conventional Commits"
+              echo "Message: $MESSAGE"
+              FAILED=1
+            fi
+          done
+          
+          if [ $FAILED -eq 1 ]; then
+            echo "Please ensure all commits follow Conventional Commits format"
+            exit 1
+          fi
+
+      - name: Enable auto-merge
+        run: |
+          gh pr merge ${{ github.event.pull_request.number }} --auto --squash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment on PR
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            gh pr comment ${{ github.event.pull_request.number }} --body "✅ Auto-merge enabled. PR will be merged when all checks pass."
+          else
+            gh pr comment ${{ github.event.pull_request.number }} --body "❌ Auto-merge not enabled. Checks failed or commit message not conventional."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

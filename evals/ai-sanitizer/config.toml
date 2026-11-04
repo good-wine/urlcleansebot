@@ -1,0 +1,30 @@
+[ai]
+api_base = "https://api.openai.com/v1"
+api_key = "${AI_API_KEY}"
+model = "gpt-4o-mini"
+
+[judge]
+api_base = "https://api.openai.com/v1"
+api_key = "${AI_API_KEY}"
+model = "gpt-4o-mini"
+
+[eval]
+timeout_secs = 30
+max_retries = 3
+cost_per_1k_input_tokens = 0.00015
+cost_per_1k_output_tokens = 0.0006
+
+[gate]
+# Regression gate thresholds - fail CI if not met
+f1_threshold = 0.95
+false_positive_rate_threshold = 0.02
+latency_p95_threshold_ms = 5000
+fallback_rate_threshold = 0.05
+success_rate_threshold = 0.99
+attack_success_rate_threshold = 0.0
+
+[datasets]
+golden_set = "dataset/golden_set.jsonl"
+edge_cases = "dataset/edge_cases.jsonl"
+regression = "dataset/regression.jsonl"
+adversarial = "dataset/adversarial.jsonl"

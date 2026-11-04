@@ -1,0 +1,74 @@
+#!/bin/sh
+# ──────────────────────────────────────────────────────────────
+# Git commit-msg hook: validate Conventional Commits locally
+# Install: git config core.hooksPath .githooks
+# ──────────────────────────────────────────────────────────────
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Skip merge commits
+if echo "$COMMIT_MSG" | grep -qE '^Merge '; then
+  exit 0
+fi
+
+# Skip revert commits (they have their own format)
+if echo "$COMMIT_MSG" | grep -qE '^Revert '; then
+  exit 0
+fi
+
+# Conventional Commits regex
+# type(scope)!: subject
+# type: subject
+CONVENTIONAL_REGEX='^(feat|fix|docs|refactor|test|chore|perf|security|ci|build|revert|style)(\([a-z0-9\-]+\))?!: .+'
+
+# Allowed scopes
+VALID_SCOPES="sanitizer|db|telegram|ai|config|deploy|docs|deps|metrics|i18n|security|redirects|bench|release"
+
+# Check format
+if ! echo "$COMMIT_MSG" | head -1 | grep -qE "$CONVENTIONAL_REGEX"; then
+  echo "❌ Invalid commit message format"
+  echo ""
+  echo "Expected format: <type>(<scope>): <subject>"
+  echo ""
+  echo "Types: feat, fix, docs, refactor, test, chore, perf, security, ci, build, revert, style"
+  echo "Scopes: sanitizer, db, telegram, ai, config, deploy, docs, deps, metrics, i18n, security, redirects, bench, release"
+  echo ""
+  echo "Examples:"
+  echo "  feat(sanitizer): add new tracking parameter rule"
+  echo "  fix(db): resolve connection leak in pool"
+  echo "  docs: update README with new env vars"
+  echo "  perf(sanitizer)!: rewrite parser for 2x speed"
+  echo "  chore(deps): update dependencies"
+  echo ""
+  echo "Your message:"
+  echo "$COMMIT_MSG" | head -1
+  exit 1
+fi
+
+# Validate scope if present
+SCOPE=$(echo "$COMMIT_MSG" | head -1 | sed -E 's/^[^(]+\(([^)]+)\).*/\1/')
+if [ -n "$SCOPE" ] && [ "$SCOPE" != "$(echo "$COMMIT_MSG" | head -1 | sed -E 's/^[^(]+\([^)]+\).*/\1/')" ]; then
+  # Check if scope is valid
+  if ! echo "$SCOPE" | grep -qE "^($VALID_SCOPES)$"; then
+    echo "⚠️  Warning: Unrecognized scope '$SCOPE'"
+    echo "Valid scopes: sanitizer, db, telegram, ai, config, deploy, docs, deps, metrics, i18n, security, redirects, bench, release"
+    echo "Continuing anyway (scope is optional)..."
+  fi
+fi
+
+# Check subject length (first line max 100 chars)
+FIRST_LINE=$(echo "$COMMIT_MSG" | head -1)
+if [ ${#FIRST_LINE} -gt 100 ]; then
+  echo "⚠️  Warning: Subject line exceeds 100 characters (${#FIRST_LINE})"
+  echo "Consider shortening for better readability"
+fi
+
+# Check for breaking change indicator
+if echo "$COMMIT_MSG" | grep -qE '^([^(]+\([^)]+\))?!:'; then
+  echo "✅ Breaking change detected (!) - will trigger major version bump"
+elif echo "$COMMIT_MSG" | grep -qi "BREAKING CHANGE:"; then
+  echo "✅ Breaking change detected in footer - will trigger major version bump"
+fi
+
+exit 0

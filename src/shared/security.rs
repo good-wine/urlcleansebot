@@ -179,7 +179,7 @@ pub fn hash_user_id(user_id: i64) -> String {
     hasher.update(salted.as_bytes());
     let result = hasher.finalize();
     // Convert hash result to hex string manually
-    result.iter().map(|b| format!("{:02x}", b)).collect()
+    result.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 static DOMAIN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
@@ -221,7 +221,7 @@ pub fn is_safe_url_scheme(url: &str) -> bool {
 /// The expected signature is hex-encoded HMAC-SHA256 of the body.
 pub fn verify_hmac_signature(body: &[u8], signature: &str, secret: &[u8]) -> bool {
     let expected = hmac_sha256(secret, body);
-    let expected_hex: String = expected.iter().map(|b| format!("{:02x}", b)).collect();
+    let expected_hex: String = expected.iter().map(|b| format!("{b:02x}")).collect();
     // Constant-time comparison using XOR
     if expected_hex.len() != signature.len() {
         return false;
@@ -374,7 +374,7 @@ mod tests {
         let secret = b"my-secret-key";
         let sig_hex: String = hmac_sha256(secret, body)
             .iter()
-            .map(|b| format!("{:02x}", b))
+            .map(|b| format!("{b:02x}"))
             .collect();
         assert!(verify_hmac_signature(body, &sig_hex, secret));
         assert!(!verify_hmac_signature(body, "invalid", secret));
@@ -388,7 +388,7 @@ mod tests {
         let expected = "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843";
         let result: String = hmac_sha256(key, data)
             .iter()
-            .map(|b| format!("{:02x}", b))
+            .map(|b| format!("{b:02x}"))
             .collect();
         assert_eq!(result, expected);
     }

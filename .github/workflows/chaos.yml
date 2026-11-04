@@ -1,0 +1,248 @@
+name: Chaos Engineering
+
+on:
+  schedule:
+    # Run weekly on Sunday at 03:00 UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'Chaos scenario to run'
+        type: choice
+        required: false
+        default: 'all'
+        options:
+          - all
+          - db_latency
+          - db_unavailable
+          - ai_failure
+          - rule_fetch_failure
+          - network_partition
+          - memory_pressure
+          - cpu_throttling
+          - disk_full
+          - telegram_flood
+      duration:
+        description: 'Duration in seconds (override default)'
+        type: string
+        required: false
+        default: ''
+      dry_run:
+        description: 'Dry run - only verify current state'
+        type: boolean
+        required: false
+        default: false
+
+env:
+  COMPOSE_FILE: compose.yml
+  SERVICE_NAME: url_cleanse_bot
+  HEALTH_ENDPOINT: http://localhost:3000/health
+  METRICS_ENDPOINT: http://localhost:3000/metrics
+  ALERTMANAGER_URL: http://localhost:9093
+  REPORT_DIR: /tmp/chaos-reports
+
+jobs:
+  chaos-test:
+    name: Chaos Test - ${{ github.event.inputs.scenario || 'all' }}
+    runs-on: [self-hosted, linux, x64]  # Requires self-hosted runner with Docker
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            iproute2 \
+            iptables \
+            iputils-ping \
+            curl \
+            jq \
+            bc \
+            stress-ng \
+            util-linux \
+            dnsutils \
+            netcat-openbsd
+
+      - name: Verify Docker Compose
+        run: |
+          docker compose version
+          docker compose -f ${{ env.COMPOSE_FILE }} config
+
+      - name: Start services
+        run: |
+          docker compose -f ${{ env.COMPOSE_FILE }} up -d
+          # Wait for health
+          timeout 120 bash -c 'until curl -sf ${{ env.HEALTH_ENDPOINT }}; do sleep 5; done'
+
+      - name: Capture baseline metrics
+        run: |
+          mkdir -p ${{ env.REPORT_DIR }}
+          curl -sf ${{ env.METRICS_ENDPOINT }} > ${{ env.REPORT_DIR }}/baseline_metrics_$(date +%s).txt || true
+
+      - name: Run chaos scenario
+        id: chaos
+        env:
+          SCENARIO: ${{ github.event.inputs.scenario || 'all' }}
+          DURATION: ${{ github.event.inputs.duration }}
+        run: |
+          set -euo pipefail
+          
+          SCENARIO="${SCENARIO:-all}"
+          DURATION="${DURATION:-}"
+          
+          case "$SCENARIO" in
+            db_latency)
+              bash chaos/scripts/inject_db_latency.sh
+              ;;
+            db_unavailable)
+              bash chaos/scripts/inject_db_unavailable.sh
+              ;;
+            ai_failure)
+              bash chaos/scripts/inject_ai_failure.sh
+              ;;
+            rule_fetch_failure)
+              bash chaos/scripts/inject_rule_fetch_failure.sh
+              ;;
+            network_partition)
+              bash chaos/scripts/inject_network_partition.sh
+              ;;
+            memory_pressure)
+              bash chaos/scripts/inject_memory_pressure.sh
+              ;;
+            cpu_throttling)
+              bash chaos/scripts/inject_cpu_throttling.sh
+              ;;
+            disk_full)
+              bash chaos/scripts/inject_disk_full.sh
+              ;;
+            telegram_flood)
+              bash chaos/scripts/inject_telegram_flood.sh
+              ;;
+            all)
+              # Run all scenarios sequentially
+              for s in db_latency db_unavailable ai_failure rule_fetch_failure network_partition memory_pressure cpu_throttling disk_full telegram_flood; do
+                echo "=== Running scenario: $s ==="
+                DURATION=60 bash chaos/scripts/inject_${s}.sh || echo "Scenario $s failed, continuing..."
+                sleep 30  # Recovery time between scenarios
+              done
+              ;;
+            *)
+              echo "Unknown scenario: $SCENARIO"
+              exit 1
+              ;;
+          esac
+
+      - name: Wait for recovery
+        if: always()
+        run: |
+          echo "Waiting for system recovery..."
+          timeout 120 bash -c 'until curl -sf ${{ env.HEALTH_ENDPOINT }}; do sleep 5; done' || echo "Health check still failing after recovery period"
+
+      - name: Run verification
+        run: |
+          bash chaos/scripts/verify.sh ${{ github.event.inputs.scenario || 'all' }}
+
+      - name: Build and run Rust verifier
+        run: |
+          cargo build --release --bin chaos_verify
+          ./target/release/chaos_verify ${{ github.event.inputs.scenario || 'all' }}
+
+      - name: Upload chaos reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-reports-${{ github.event.inputs.scenario || 'all' }}-${{ github.run_id }}
+          path: |
+            /tmp/chaos-reports/
+            ${{ env.REPORT_DIR }}/
+          retention-days: 30
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose -f ${{ env.COMPOSE_FILE }} down -v || true
+          docker system prune -f || true
+
+  chaos-report:
+    name: Generate Chaos Report
+    needs: chaos-test
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Download chaos reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: chaos-reports-*
+          merge-multiple: true
+          path: chaos-reports
+
+      - name: Generate summary report
+        run: |
+          echo "# Chaos Engineering Report" > chaos_summary.md
+          echo "" >> chaos_summary.md
+          echo "Workflow: ${{ github.workflow }}" >> chaos_summary.md
+          echo "Run: ${{ github.run_id }}" >> chaos_summary.md
+          echo "Date: $(date -u)" >> chaos_summary.md
+          echo "Scenario: ${{ github.event.inputs.scenario || 'all' }}" >> chaos_summary.md
+          echo "" >> chaos_summary.md
+          echo "## Results" >> chaos_summary.md
+          echo "" >> chaos_summary.md
+          
+          for f in chaos-reports/*.json; do
+            if [ -f "$f" ]; then
+              scenario=$(jq -r '.scenario' "$f" 2>/dev/null || echo "unknown")
+              status=$(jq -r '.status' "$f" 2>/dev/null || echo "unknown")
+              error_rate=$(jq -r '.metrics.error_rate' "$f" 2>/dev/null || echo "0")
+              p99=$(jq -r '.metrics.p99_latency_ms' "$f" 2>/dev/null || echo "0")
+              echo "- **$scenario**: $status (Error Rate: $(printf "%.2f%%" $(echo "$error_rate * 100" | bc -l)), P99: ${p99}ms)" >> chaos_summary.md
+            fi
+          done
+          
+          # Also check verification results
+          for f in chaos-reports/chaos_verify_*.json; do
+            if [ -f "$f" ]; then
+              scenario=$(jq -r '.scenario' "$f" 2>/dev/null || echo "unknown")
+              passed=$(jq -r '.passed' "$f" 2>/dev/null || echo "false")
+              echo "- **Verification ($scenario)**: $passed" >> chaos_summary.md
+            fi
+          done
+
+      - name: Upload summary report
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-summary-${{ github.run_id }}
+          path: chaos_summary.md
+          retention-days: 90
+
+      - name: Comment on workflow run
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('chaos_summary.md', 'utf8');
+            await github.rest.issues.createComment({
+              issue_number: ${{ github.run_id }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+  notify-failure:
+    name: Notify on Failure
+    needs: chaos-test
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send failure notification
+        run: |
+          echo "Chaos test failed!"
+          echo "Run: ${{ github.run_id }}"
+          echo "Scenario: ${{ github.event.inputs.scenario || 'all' }}"
+          # Add your notification logic here (Slack, email, PagerDuty, etc.)
+          # Example: curl -X POST -H 'Content-type: application/json' --data '{"text":"Chaos test failed"}' $SLACK_WEBHOOK

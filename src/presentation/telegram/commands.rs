@@ -29,8 +29,8 @@ pub async fn handle_start(
     use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
     let welcome_text = tr.welcome.replace("{}", &user_id.to_string());
     let keyboard = InlineKeyboardMarkup::new(vec![vec![
-        InlineKeyboardButton::callback(tr.start_open_settings, format!("settings:{}", user_id)),
-        InlineKeyboardButton::callback(tr.start_view_stats, format!("user_setting:stats:{}", user_id)),
+        InlineKeyboardButton::callback(tr.start_open_settings, format!("settings:{user_id}")),
+        InlineKeyboardButton::callback(tr.start_view_stats, format!("user_setting:stats:{user_id}")),
     ]]);
     bot.send_message(chat_id, welcome_text)
         .parse_mode(ParseMode::Html)
@@ -595,10 +595,9 @@ pub async fn handle_limits(
 ) -> CommandResult {
     let msg = format!(
         "<b>\u{26a1} Limiti API</b>\n\n\
-        \u{1f504} Richieste: <b>{}</b> al minuto\n\
-        \u{23f1}\u{1fe0f} Finestra: <b>{}</b> secondi\n\n\
+        \u{1f504} Richieste: <b>{RATE_LIMIT_REQUESTS}</b> al minuto\n\
+        \u{23f1}\u{1fe0f} Finestra: <b>{RATE_LIMIT_WINDOW}</b> secondi\n\n\
         \u{2139}\u{1fe0f} I limiti si azzerano automaticamente.",
-        RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW,
     );
     bot.send_message(chat_id, msg)
         .parse_mode(ParseMode::Html)

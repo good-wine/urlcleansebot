@@ -206,13 +206,13 @@ mod tests {
     #[test]
     fn test_shannon_entropy_low() {
         let e = shannon_entropy("homepage");
-        assert!(e < ENTROPY_THRESHOLD, "entropy={} >= threshold", e);
+        assert!(e < ENTROPY_THRESHOLD, "entropy={e} >= threshold");
     }
 
     #[test]
     fn test_shannon_entropy_high() {
         let e = shannon_entropy("a1b2c3d4e5f6g7h8");
-        assert!(e > ENTROPY_THRESHOLD, "entropy={} <= threshold", e);
+        assert!(e > ENTROPY_THRESHOLD, "entropy={e} <= threshold");
     }
 
     #[test]

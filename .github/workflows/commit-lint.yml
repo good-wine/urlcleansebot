@@ -1,0 +1,151 @@
+# ──────────────────────────────────────────────────────────────
+# Commit Lint Workflow
+# Enforces Conventional Commits on every PR commit
+# ──────────────────────────────────────────────────────────────
+name: Commit Lint
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  commitlint:
+    name: Validate Commit Messages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+        with:
+          fetch-depth: 0  # Need full history for commitlint
+
+      - name: Setup Node.js
+        uses: actions/setup-node@2a23c6d80d29e6a0b5800c1f44b5d6a7e1e1e3e3 # v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install commitlint
+        run: npm install -g @commitlint/cli @commitlint/config-conventional
+
+      - name: Create commitlint config
+        run: |
+          cat > commitlint.config.js << 'EOF'
+          module.exports = {
+            extends: ['@commitlint/config-conventional'],
+            rules: {
+              'type-enum': [
+                2,
+                'always',
+                [
+                  'feat',
+                  'fix',
+                  'docs',
+                  'refactor',
+                  'test',
+                  'chore',
+                  'perf',
+                  'security',
+                  'ci',
+                  'build',
+                  'revert',
+                  'style'
+                ]
+              ],
+              'scope-enum': [
+                2,
+                'always',
+                [
+                  'sanitizer',
+                  'db',
+                  'telegram',
+                  'ai',
+                  'config',
+                  'deploy',
+                  'docs',
+                  'deps',
+                  'metrics',
+                  'i18n',
+                  'security',
+                  'redirects',
+                  'bench',
+                  'release'
+                ]
+              ],
+              'scope-case': [2, 'always', 'lower-case'],
+              'type-case': [2, 'always', 'lower-case'],
+              'subject-empty': [2, 'never'],
+              'subject-case': [2, 'never', ['sentence-case', 'start-case', 'pascal-case', 'upper-case']],
+              'header-max-length': [2, 'always', 100]
+            },
+            prompt: {
+              messages: {
+                type: "Select the type of change that you're committing:",
+                scope: 'Denote the SCOPE of this change (optional):',
+                customScope: 'Denote the SCOPE of this change:',
+                subject: 'Write a SHORT, IMPERATIVE tense description of the change:\n',
+                body: 'Provide a LONGER description of the change (optional). Use "|" to break new line:\n',
+                breaking: 'List any BREAKING CHANGES (optional). Use "|" to break new line:\n',
+                footer: 'List any ISSUES CLOSED by this change (optional). Use "|" to break new line:\n',
+                confirmCommit: 'Are you sure you want to proceed with the commit above?'
+              }
+            }
+          };
+          EOF
+
+      - name: Run commitlint on PR commits
+        run: |
+          # Get commits in this PR (excluding merge commits)
+          COMMITS=$(git log --oneline --no-merges origin/${{ github.base_ref }}..HEAD --format="%H")
+          
+          if [ -z "$COMMITS" ]; then
+            echo "No new commits to lint"
+            exit 0
+          fi
+          
+          echo "Checking commits:"
+          echo "$COMMITS"
+          
+          # Check each commit
+          FAILED=0
+          for commit in $COMMITS; do
+            MESSAGE=$(git log --format=%B -n 1 $commit)
+            echo "---"
+            echo "Commit: $commit"
+            echo "Message: $MESSAGE"
+            
+            if ! echo "$MESSAGE" | commitlint; then
+              echo "❌ Commit $commit failed linting"
+              FAILED=1
+            else
+              echo "✅ Commit $commit passed"
+            fi
+          done
+          
+          if [ $FAILED -eq 1 ]; then
+            echo ""
+            echo "==========================================="
+            echo "❌ Some commits failed Conventional Commits validation"
+            echo "==========================================="
+            echo ""
+            echo "Please fix your commit messages. Format:"
+            echo "  <type>(<scope>): <subject>"
+            echo ""
+            echo "Types: feat, fix, docs, refactor, test, chore, perf, security, ci, build, revert, style"
+            echo "Scopes: sanitizer, db, telegram, ai, config, deploy, docs, deps, metrics, i18n, security, redirects, bench, release"
+            echo ""
+            echo "Examples:"
+            echo "  feat(sanitizer): add new tracking parameter rule"
+            echo "  fix(db): resolve connection leak in pool"
+            echo "  docs: update README with new env vars"
+            echo "  perf(sanitizer)!: rewrite parser for 2x speed"
+            echo "  chore(deps): update dependencies"
+            exit 1
+          fi
+          
+          echo ""
+          echo "==========================================="
+          echo "✅ All commits follow Conventional Commits"
+          echo "==========================================="
