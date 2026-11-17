@@ -41,7 +41,7 @@ AI-powered sanitization.
 
 ## Try It
 
-Talk to [@clearurls_bot](https://t.me/clearurls_bot) on Telegram.
+Talk to [bot](https://t.me/ClearURLsBot) on Telegram.
 
 ## Quick Start
 
